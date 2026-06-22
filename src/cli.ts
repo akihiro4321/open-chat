@@ -1,4 +1,5 @@
 import { ConfigurationError, loadConfig } from './config.js';
+import { ApplicationError } from './errors.js';
 import { requestAnswer } from './openai-client.js';
 
 const DEFAULT_INSTRUCTION = 'あなたは正確で簡潔な日本語で回答するアシスタントです。';
@@ -92,7 +93,11 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  if (error instanceof InputError || error instanceof ConfigurationError) {
+  if (
+    error instanceof InputError ||
+    error instanceof ConfigurationError ||
+    error instanceof ApplicationError
+  ) {
     console.error(`エラー: ${error.message}`);
   } else {
     console.error('エラー: OpenAIへの問い合わせに失敗しました。');
