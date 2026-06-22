@@ -3,12 +3,30 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "jsx": "react-jsx",
+    "plugins": [{ "name": "next" }],
     "strict": true,
     "noEmit": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "skipLibCheck": true,
-    "types": ["node"]
+    "types": ["node"],
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "incremental": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts"]
+  "include": [
+    "next-env.d.ts",
+    ".next/types/**/*.ts",
+    "app/**/*.ts",
+    "app/**/*.tsx",
+    "src/**/*.ts",
+    "tests/**/*.ts",
+    "next.config.ts",
+    ".next/dev/types/**/*.ts"
+  ],
+  "exclude": ["node_modules"]
 }

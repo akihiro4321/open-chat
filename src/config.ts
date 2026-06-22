@@ -10,7 +10,9 @@ export class ConfigurationError extends Error {
   }
 }
 
-export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppConfig {
+export function loadConfig(
+  environment: Record<string, string | undefined> = process.env,
+): AppConfig {
   const apiKey = environment.OPENAI_API_KEY?.trim();
   const model = environment.OPENAI_MODEL?.trim();
 

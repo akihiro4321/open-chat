@@ -4,27 +4,35 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
     "chat": "tsx src/cli.ts",
     "test": "tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "format": "prettier --write src tests README.md package.json tsconfig.json eslint.config.mjs .prettierrc.json",
-    "format:check": "prettier --check src tests README.md package.json tsconfig.json eslint.config.mjs .prettierrc.json",
+    "format": "prettier --write app src tests README.md package.json tsconfig.json next.config.ts eslint.config.mjs .prettierrc.json",
+    "format:check": "prettier --check app src tests README.md package.json tsconfig.json next.config.ts eslint.config.mjs .prettierrc.json",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm test",
     "precommit": "lint-staged && npm run typecheck && npm run lint",
     "prepare": "husky"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.9.0"
   },
   "dependencies": {
+    "next": "^16.2.9",
     "openai": "^6.44.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.0.0",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
     "eslint": "^10.5.0",
     "eslint-plugin-simple-import-sort": "^13.0.0",
     "husky": "^9.1.7",
@@ -35,10 +43,10 @@
     "typescript-eslint": "^8.61.1"
   },
   "lint-staged": {
-    "*.ts": [
+    "*.{ts,tsx}": [
       "eslint --fix",
       "prettier --write"
     ],
-    "*.{json,md,mjs}": "prettier --write"
+    "*.{css,json,md,mjs}": "prettier --write"
   }
 }

@@ -1,10 +1,10 @@
 # Open Chat
 
-OpenAI Responses APIへ質問を送り、ストリーミング回答・モデル名・トークン使用量をターミナルに表示するTypeScript製CLIです。
+OpenAI Responses APIへ質問を送り、回答を生成された部分から表示するTypeScript製チャットアプリです。CLIとローカルWeb画面から利用できます。
 
 ## 必要な環境
 
-- Node.js 20以上
+- Node.js 20.9以上
 - npm
 - OpenAI APIキー
 
@@ -16,6 +16,14 @@ export OPENAI_API_KEY="..."
 export OPENAI_MODEL="使用するモデル名"
 npm run chat -- --question "日本の首都はどこですか？"
 ```
+
+Web版は開発サーバーを起動し、ブラウザで `http://localhost:3000` を開きます。
+
+```bash
+npm run dev
+```
+
+ブラウザはOpen ChatのAPIルートだけを呼び出し、APIキーはサーバー側の環境変数として扱います。回答は改行区切りJSONのストリームで受け取り、生成された部分から画面へ表示します。「停止」を押すとブラウザからOpenAI APIまで中断を伝播します。第4章では会話を保存しないため、画面を再読み込みするとメッセージは消えます。
 
 AIへの指示を変更する場合は、`--instruction`を追加します。
 

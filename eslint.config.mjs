@@ -5,10 +5,10 @@ import tseslint from 'typescript-eslint';
 
 export default defineConfig(
   {
-    ignores: ['node_modules/**', 'dist/**', 'docs/**'],
+    ignores: ['node_modules/**', '.next/**', 'dist/**', 'docs/**'],
   },
   {
-    files: ['**/*.{js,mjs,cjs,ts}'],
+    files: ['**/*.{js,mjs,cjs,ts,tsx}'],
     plugins: {
       'simple-import-sort': simpleImportSort,
     },
@@ -18,7 +18,7 @@ export default defineConfig(
     },
   },
   {
-    files: ['src/**/*.ts', 'tests/**/*.ts'],
+    files: ['app/**/*.{ts,tsx}', 'src/**/*.ts', 'tests/**/*.ts', 'next.config.ts'],
     extends: [eslint.configs.recommended, tseslint.configs.recommendedTypeChecked],
     languageOptions: {
       parserOptions: {
