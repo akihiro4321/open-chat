@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
 export const chatRequestSchema = z.object({
+  threadId: z.string().min(1),
+  requestId: z.uuid(),
   message: z.string().trim().min(1).max(10_000),
 });
 
@@ -14,6 +16,8 @@ export const chatStreamEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('delta'), delta: z.string() }),
   z.object({
     type: z.literal('done'),
+    assistantMessageId: z.string(),
+    threadTitle: z.string(),
     model: z.string(),
     usage: tokenUsageSchema.nullable(),
   }),

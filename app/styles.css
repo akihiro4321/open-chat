@@ -41,6 +41,89 @@ button:disabled {
   opacity: 0.45;
 }
 
+.workspace {
+  display: grid;
+  grid-template-columns: 18rem minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.sidebar {
+  background: #e7e5dd;
+  border-right: 1px solid var(--line);
+  padding: 1.5rem 1rem;
+}
+
+.sidebar-header {
+  align-items: start;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+
+.sidebar-header h1 {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1.65rem;
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  margin: 0;
+}
+
+.icon-button {
+  font-size: 1.25rem;
+  height: 2.35rem;
+  padding: 0;
+  width: 2.35rem;
+}
+
+.thread-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.thread-item {
+  align-items: center;
+  border-radius: 0.7rem;
+  display: flex;
+}
+
+.thread-item.is-active {
+  background: var(--surface);
+  box-shadow: 0 0.25rem 1rem rgb(30 36 31 / 6%);
+}
+
+.thread-select,
+.thread-delete {
+  background: transparent;
+  color: var(--text);
+}
+
+.thread-select {
+  flex: 1;
+  font-size: 0.85rem;
+  overflow: hidden;
+  padding: 0.7rem 0.75rem;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread-delete {
+  color: var(--muted);
+  font-size: 1rem;
+  padding: 0.5rem 0.65rem;
+}
+
+.chat-panel {
+  display: grid;
+  grid-template-rows: auto minmax(18rem, 1fr) auto auto auto;
+  margin: 0 auto;
+  min-height: 100vh;
+  max-width: 58rem;
+  padding: 2rem 1.5rem 1.5rem;
+  width: 100%;
+}
+
 .shell {
   display: grid;
   grid-template-rows: auto minmax(18rem, 1fr) auto auto auto;
@@ -64,6 +147,12 @@ button:disabled {
   font-weight: 500;
   letter-spacing: -0.04em;
   line-height: 1;
+  margin: 0;
+}
+
+.app-header h2 {
+  font-size: 1rem;
+  font-weight: 700;
   margin: 0;
 }
 
@@ -193,6 +282,34 @@ button:disabled {
 }
 
 @media (max-width: 40rem) {
+  .workspace {
+    display: block;
+  }
+
+  .sidebar {
+    border-bottom: 1px solid var(--line);
+    border-right: 0;
+    padding: 1rem;
+  }
+
+  .sidebar-header {
+    margin-bottom: 0.75rem;
+  }
+
+  .thread-list {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+
+  .thread-item {
+    flex: 0 0 12rem;
+  }
+
+  .chat-panel {
+    min-height: calc(100vh - 8rem);
+    padding: 1.25rem 0.9rem 1rem;
+  }
+
   .shell {
     padding: 1.25rem 0.9rem 1rem;
   }

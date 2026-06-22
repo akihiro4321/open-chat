@@ -1,52 +1,101 @@
 'use client';
 
 import type { FormEvent } from 'react';
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { chatStreamEventSchema } from '../src/chat-protocol.js';
+
+interface ThreadSummary {
+  id: string;
+  title: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
 
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   status: 'streaming' | 'completed' | 'cancelled' | 'failed';
+  modelRun?: RunDetails | null;
 }
 
 interface RunDetails {
   model: string;
-  usage: {
-    inputTokens: number;
-    outputTokens: number;
-    totalTokens: number;
-  } | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  totalTokens?: number | null;
 }
 
-function newMessage(role: Message['role'], content: string, status: Message['status']): Message {
-  return { id: crypto.randomUUID(), role, content, status };
+async function readApiError(response: Response): Promise<string> {
+  const body = (await response.json().catch(() => null)) as { message?: string } | null;
+  return body?.message ?? 'APIへの接続に失敗しました。';
 }
 
 export default function ChatPage() {
+  const [threads, setThreads] = useState<ThreadSummary[]>([]);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [runDetails, setRunDetails] = useState<RunDetails | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const updateAssistant = (
-    id: string,
-    update: Partial<Pick<Message, 'content' | 'status'>>,
-  ): void => {
+  const loadThread = useCallback(async (threadId: string): Promise<void> => {
+    const response = await fetch(`/api/threads/${threadId}`);
+    if (!response.ok) {
+      throw new Error(await readApiError(response));
+    }
+
+    const thread = (await response.json()) as { messages: Message[] };
+    setActiveThreadId(threadId);
+    setMessages(thread.messages);
+    const lastRun = thread.messages.toReversed().find((message) => message.modelRun)?.modelRun;
+    setRunDetails(lastRun ?? null);
+  }, []);
+
+  const createNewThread = useCallback(async (): Promise<ThreadSummary> => {
+    const response = await fetch('/api/threads', { method: 'POST' });
+    if (!response.ok) {
+      throw new Error(await readApiError(response));
+    }
+
+    const thread = (await response.json()) as ThreadSummary;
+    setThreads((current) => [thread, ...current]);
+    setActiveThreadId(thread.id);
+    setMessages([]);
+    setRunDetails(null);
+    return thread;
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch('/api/threads');
+        if (!response.ok) {
+          throw new Error(await readApiError(response));
+        }
+
+        const body = (await response.json()) as { threads: ThreadSummary[] };
+        setThreads(body.threads);
+        if (body.threads[0]) {
+          await loadThread(body.threads[0].id);
+        } else {
+          await createNewThread();
+        }
+      } catch (reason: unknown) {
+        setError(reason instanceof Error ? reason.message : 'スレッドを読み込めませんでした。');
+      } finally {
+        setIsLoading(false);
+      }
+    })();
+  }, [createNewThread, loadThread]);
+
+  const updateAssistant = (id: string, update: Partial<Message>): void => {
     setMessages((current) =>
       current.map((message) => (message.id === id ? { ...message, ...update } : message)),
-    );
-  };
-
-  const appendAssistantText = (id: string, delta: string): void => {
-    setMessages((current) =>
-      current.map((message) =>
-        message.id === id ? { ...message, content: message.content + delta } : message,
-      ),
     );
   };
 
@@ -54,7 +103,13 @@ export default function ChatPage() {
     const event = chatStreamEventSchema.parse(JSON.parse(line));
 
     if (event.type === 'delta') {
-      appendAssistantText(assistantId, event.delta);
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === assistantId
+            ? { ...message, content: message.content + event.delta }
+            : message,
+        ),
+      );
       return false;
     }
 
@@ -62,17 +117,29 @@ export default function ChatPage() {
       throw new Error(event.message);
     }
 
-    setRunDetails({ model: event.model, usage: event.usage });
-    updateAssistant(assistantId, { status: 'completed' });
+    const modelRun = event.usage ? { model: event.model, ...event.usage } : { model: event.model };
+    setRunDetails(modelRun);
+    updateAssistant(assistantId, {
+      id: event.assistantMessageId,
+      status: 'completed',
+      modelRun,
+    });
+    setThreads((current) => {
+      const active = current.find((thread) => thread.id === activeThreadId);
+      return active
+        ? [
+            { ...active, title: event.threadTitle },
+            ...current.filter((thread) => thread.id !== activeThreadId),
+          ]
+        : current;
+    });
     return true;
   };
 
   const consumeStream = async (response: Response, assistantId: string): Promise<void> => {
     if (!response.ok) {
-      const body = (await response.json().catch(() => null)) as { message?: string } | null;
-      throw new Error(body?.message ?? 'チャットAPIへの接続に失敗しました。');
+      throw new Error(await readApiError(response));
     }
-
     if (!response.body) {
       throw new Error('チャットAPIからストリームを取得できませんでした。');
     }
@@ -87,36 +154,34 @@ export default function ChatPage() {
       buffer += decoder.decode(value, { stream: !done });
       const lines = buffer.split('\n');
       buffer = lines.pop() ?? '';
-
       for (const line of lines) {
-        if (line) {
-          completed = handleLine(line, assistantId) || completed;
-        }
+        if (line) completed = handleLine(line, assistantId) || completed;
       }
-
-      if (done) {
-        if (buffer) {
-          completed = handleLine(buffer, assistantId) || completed;
-        }
-        break;
-      }
+      if (done) break;
     }
 
-    if (!completed) {
-      throw new Error('回答ストリームが完了前に終了しました。');
-    }
+    if (buffer) completed = handleLine(buffer, assistantId) || completed;
+    if (!completed) throw new Error('回答ストリームが完了前に終了しました。');
   };
 
   const submit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     const question = input.trim();
+    if (!question || isGenerating || !activeThreadId) return;
 
-    if (!question || isGenerating) {
-      return;
-    }
-
-    const userMessage = newMessage('user', question, 'completed');
-    const assistantMessage = newMessage('assistant', '', 'streaming');
+    const userMessage: Message = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: question,
+      status: 'completed',
+    };
+    const assistantMessage: Message = {
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content: '',
+      status: 'streaming',
+    };
+    const requestId = crypto.randomUUID();
     const abortController = new AbortController();
 
     setMessages((current) => [...current, userMessage, assistantMessage]);
@@ -130,7 +195,7 @@ export default function ChatPage() {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: question }),
+        body: JSON.stringify({ threadId: activeThreadId, requestId, message: question }),
         signal: abortController.signal,
       });
       await consumeStream(response, assistantMessage.id);
@@ -138,8 +203,7 @@ export default function ChatPage() {
       if (reason instanceof DOMException && reason.name === 'AbortError') {
         updateAssistant(assistantMessage.id, { status: 'cancelled' });
       } else {
-        const message = reason instanceof Error ? reason.message : '回答の取得に失敗しました。';
-        setError(message);
+        setError(reason instanceof Error ? reason.message : '回答の取得に失敗しました。');
         updateAssistant(assistantMessage.id, { status: 'failed' });
       }
     } finally {
@@ -148,78 +212,133 @@ export default function ChatPage() {
     }
   };
 
-  const stop = (): void => {
-    abortControllerRef.current?.abort();
+  const removeThread = async (threadId: string): Promise<void> => {
+    if (isGenerating || !window.confirm('このスレッドを削除しますか？')) return;
+    const response = await fetch(`/api/threads/${threadId}`, { method: 'DELETE' });
+    if (!response.ok) {
+      setError(await readApiError(response));
+      return;
+    }
+
+    const remaining = threads.filter((thread) => thread.id !== threadId);
+    setThreads(remaining);
+    if (activeThreadId === threadId) {
+      if (remaining[0]) await loadThread(remaining[0].id);
+      else await createNewThread();
+    }
   };
 
   return (
-    <main className="shell">
-      <header className="app-header">
-        <div>
-          <p className="eyebrow">LOCAL AI WORKSPACE</p>
-          <h1>Open Chat</h1>
-        </div>
-        <span className="status-badge">OpenAI</span>
-      </header>
-
-      <section className="messages" aria-live="polite" aria-label="メッセージ一覧">
-        {messages.length === 0 ? (
-          <div className="empty-state">
-            <p>質問を入力すると、回答が生成された部分から表示されます。</p>
+    <main className="workspace">
+      <aside className="sidebar">
+        <div className="sidebar-header">
+          <div>
+            <p className="eyebrow">LOCAL AI WORKSPACE</p>
+            <h1>Open Chat</h1>
           </div>
-        ) : (
-          messages.map((message) => (
-            <article className={`message message-${message.role}`} key={message.id}>
-              <p className="message-role">{message.role === 'user' ? 'あなた' : 'Open Chat'}</p>
-              <div className="message-content">
-                {message.content || (message.status === 'streaming' ? '考えています…' : '')}
-              </div>
-              {message.status === 'cancelled' && <p className="message-note">生成を中断しました</p>}
-              {message.status === 'failed' && (
-                <p className="message-note">回答を完了できませんでした</p>
-              )}
-            </article>
-          ))
-        )}
-      </section>
-
-      {error && <p className="error-message">{error}</p>}
-
-      {runDetails && (
-        <p className="run-details">
-          モデル: {runDetails.model}
-          {runDetails.usage && ` · 合計 ${runDetails.usage.totalTokens} トークン`}
-        </p>
-      )}
-
-      <form
-        className="composer"
-        onSubmit={(event) => {
-          void submit(event);
-        }}
-      >
-        <label htmlFor="message">メッセージ</label>
-        <textarea
-          id="message"
-          maxLength={10_000}
-          onChange={(event) => setInput(event.target.value)}
-          placeholder="Open Chatに質問する"
-          rows={3}
-          value={input}
-        />
-        <div className="composer-actions">
-          <span>{input.length.toLocaleString()} / 10,000</span>
-          {isGenerating ? (
-            <button className="button-secondary" onClick={stop} type="button">
-              停止
-            </button>
-          ) : (
-            <button disabled={!input.trim()} type="submit">
-              送信
-            </button>
-          )}
+          <button
+            aria-label="新しいチャット"
+            className="icon-button"
+            disabled={isGenerating}
+            onClick={() => void createNewThread()}
+            type="button"
+          >
+            ＋
+          </button>
         </div>
-      </form>
+        <nav aria-label="スレッド一覧" className="thread-list">
+          {threads.map((thread) => (
+            <div
+              className={`thread-item ${thread.id === activeThreadId ? 'is-active' : ''}`}
+              key={thread.id}
+            >
+              <button
+                className="thread-select"
+                disabled={isGenerating}
+                onClick={() => void loadThread(thread.id)}
+                type="button"
+              >
+                {thread.title}
+              </button>
+              <button
+                aria-label={`${thread.title}を削除`}
+                className="thread-delete"
+                onClick={() => void removeThread(thread.id)}
+                type="button"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </nav>
+      </aside>
+
+      <section className="chat-panel">
+        <header className="app-header">
+          <h2>{threads.find((thread) => thread.id === activeThreadId)?.title ?? 'Open Chat'}</h2>
+          <span className="status-badge">OpenAI</span>
+        </header>
+
+        <section className="messages" aria-label="メッセージ一覧" aria-live="polite">
+          {isLoading ? (
+            <div className="empty-state">読み込んでいます…</div>
+          ) : messages.length === 0 ? (
+            <div className="empty-state">質問を入力すると、会話がこの端末に保存されます。</div>
+          ) : (
+            messages.map((message) => (
+              <article className={`message message-${message.role}`} key={message.id}>
+                <p className="message-role">{message.role === 'user' ? 'あなた' : 'Open Chat'}</p>
+                <div className="message-content">
+                  {message.content || (message.status === 'streaming' ? '考えています…' : '')}
+                </div>
+                {message.status === 'cancelled' && (
+                  <p className="message-note">生成を中断しました</p>
+                )}
+                {message.status === 'failed' && (
+                  <p className="message-note">回答を完了できませんでした</p>
+                )}
+              </article>
+            ))
+          )}
+        </section>
+
+        {error && <p className="error-message">{error}</p>}
+        {runDetails && (
+          <p className="run-details">
+            モデル: {runDetails.model}
+            {runDetails.totalTokens != null && ` · 合計 ${runDetails.totalTokens} トークン`}
+          </p>
+        )}
+
+        <form className="composer" onSubmit={(event) => void submit(event)}>
+          <label htmlFor="message">メッセージ</label>
+          <textarea
+            disabled={!activeThreadId || isLoading}
+            id="message"
+            maxLength={10_000}
+            onChange={(event) => setInput(event.target.value)}
+            placeholder="Open Chatに質問する"
+            rows={3}
+            value={input}
+          />
+          <div className="composer-actions">
+            <span>{input.length.toLocaleString()} / 10,000</span>
+            {isGenerating ? (
+              <button
+                className="button-secondary"
+                onClick={() => abortControllerRef.current?.abort()}
+                type="button"
+              >
+                停止
+              </button>
+            ) : (
+              <button disabled={!input.trim() || !activeThreadId} type="submit">
+                送信
+              </button>
+            )}
+          </div>
+        </form>
+      </section>
     </main>
   );
 }

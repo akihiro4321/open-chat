@@ -16,6 +16,12 @@ const MAX_RETRY_DELAY_MS = 4_000;
 export interface ChatRequest {
   instruction: string;
   question: string;
+  history?: ConversationMessage[];
+}
+
+export interface ConversationMessage {
+  role: 'user' | 'assistant';
+  content: string;
 }
 
 export interface TokenUsage {
@@ -48,6 +54,12 @@ function createClient(config: AppConfig): OpenAI {
     maxRetries: 0,
     timeout: REQUEST_TIMEOUT_MS,
   });
+}
+
+function createInput(request: ChatRequest): string | ConversationMessage[] {
+  return request.history
+    ? [...request.history, { role: 'user', content: request.question }]
+    : request.question;
 }
 
 function toTokenUsage(
@@ -84,7 +96,7 @@ export async function requestAnswer(config: AppConfig, request: ChatRequest): Pr
         const response = await client.responses.create({
           model: config.model,
           instructions: request.instruction,
-          input: request.question,
+          input: createInput(request),
         });
         const answer = response.output_text.trim();
 
@@ -190,7 +202,7 @@ export async function requestAnswerStream(
           {
             model: config.model,
             instructions: request.instruction,
-            input: request.question,
+            input: createInput(request),
             stream: true,
           },
           { signal: options.signal },

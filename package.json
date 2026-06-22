@@ -12,16 +12,22 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "format": "prettier --write app src tests README.md package.json tsconfig.json next.config.ts eslint.config.mjs .prettierrc.json",
-    "format:check": "prettier --check app src tests README.md package.json tsconfig.json next.config.ts eslint.config.mjs .prettierrc.json",
+    "format": "prettier --write app src tests README.md package.json tsconfig.json next.config.ts prisma.config.ts eslint.config.mjs .prettierrc.json",
+    "format:check": "prettier --check app src tests README.md package.json tsconfig.json next.config.ts prisma.config.ts eslint.config.mjs .prettierrc.json",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm test",
     "precommit": "lint-staged && npm run typecheck && npm run lint",
-    "prepare": "husky"
+    "prepare": "husky",
+    "postinstall": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio"
   },
   "engines": {
     "node": ">=20.9.0"
   },
   "dependencies": {
+    "@prisma/adapter-better-sqlite3": "^7.8.0",
+    "@prisma/client": "^7.8.0",
+    "dotenv": "^17.4.2",
     "next": "^16.2.9",
     "openai": "^6.44.0",
     "react": "^19.2.7",
@@ -30,6 +36,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^26.0.0",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
@@ -38,6 +45,7 @@
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
     "prettier": "^3.8.4",
+    "prisma": "^7.8.0",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.1"
