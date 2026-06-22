@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LLM機能開発 自作カリキュラム ── 汎用チャットアプリで学ぶ</title>
+<style>
+  :root{
+    --ink:#1a1714;
+    --paper:#f6f2e9;
+    --paper2:#efe9da;
+    --rust:#b8442a;
+    --rust-d:#8f3320;
+    --teal:#2c5d63;
+    --gold:#c08a2d;
+    --line:#d6cdb8;
+    --mute:#6b6155;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif;
+    background:var(--paper);
+    color:var(--ink);
+    line-height:1.75;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:920px;margin:0 auto;padding:0 24px}
+
+  /* hero */
+  header{
+    padding:80px 24px 48px;
+    border-bottom:3px double var(--ink);
+  }
+  .eyebrow{
+    font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;
+    font-size:.72rem;letter-spacing:.32em;text-transform:uppercase;
+    color:var(--rust);font-weight:700;margin-bottom:18px;
+  }
+  h1{
+    font-size:clamp(2.1rem,5.6vw,3.6rem);
+    line-height:1.18;font-weight:700;letter-spacing:.01em;
+    margin-bottom:22px;
+  }
+  h1 .alt{color:var(--rust)}
+  .lede{
+    font-size:1.06rem;color:var(--mute);max-width:680px;
+  }
+  .meta{
+    margin-top:30px;display:flex;flex-wrap:wrap;gap:10px;
+    font-family:"Hiragino Kaku Gothic ProN",sans-serif;font-size:.78rem;
+  }
+  .tag{
+    background:var(--paper2);border:1px solid var(--line);
+    padding:5px 13px;border-radius:2px;color:var(--ink);
+  }
+  .tag.hot{background:var(--rust);color:#fff;border-color:var(--rust)}
+
+  /* intro note */
+  .note{
+    margin:46px 0;padding:24px 28px;
+    background:var(--paper2);border-left:4px solid var(--teal);
+  }
+  .note h3{
+    font-family:"Hiragino Kaku Gothic ProN",sans-serif;
+    font-size:.95rem;letter-spacing:.04em;margin-bottom:10px;color:var(--teal);
+  }
+  .note p{font-size:.95rem;color:#403a32}
+  .note p+p{margin-top:10px}
+
+  /* part */
+  .part{margin:58px 0 8px}
+  .part-num{
+    font-family:"Hiragino Kaku Gothic ProN",sans-serif;
+    font-size:.72rem;letter-spacing:.3em;color:var(--gold);font-weight:700;
+  }
+  .part-title{
+    font-size:1.5rem;font-weight:700;margin-top:4px;
+    padding-bottom:10px;border-bottom:1px solid var(--line);
+  }
+  .part-desc{font-size:.9rem;color:var(--mute);margin-top:10px}
+
+  /* chapter */
+  .chap{
+    margin:26px 0;padding:24px 26px;
+    background:#fffdf8;border:1px solid var(--line);
+    border-radius:3px;
+    position:relative;
+  }
+  .chap::before{
+    content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
+    background:var(--rust);border-radius:3px 0 0 3px;
+  }
+  .chap-head{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+  .chap-no{
+    font-family:"Hiragino Kaku Gothic ProN",sans-serif;
+    font-size:1.5rem;font-weight:700;color:var(--rust);line-height:1;
+    min-width:2.4ch;
+  }
+  .chap-title{font-size:1.22rem;font-weight:700}
+  .chap-sub{
+    font-family:"Hiragino Kaku Gothic ProN",sans-serif;
+    font-size:.78rem;color:var(--teal);margin-top:2px;letter-spacing:.03em;
+  }
+  .chap-body{margin-top:16px;padding-left:calc(2.4ch + 14px)}
+  @media(max-width:560px){.chap-body{padding-left:0}}
+
+  ul.topics{list-style:none;margin:6px 0 14px}
+  ul.topics li{
+    position:relative;padding-left:20px;font-size:.95rem;margin:5px 0;
+  }
+  ul.topics li::before{
+    content:"";position:absolute;left:2px;top:.7em;
+    width:6px;height:6px;background:var(--teal);transform:rotate(45deg);
+  }
+  .learn{
+    margin-top:12px;padding:13px 16px;background:var(--paper2);
+    border-radius:3px;font-size:.86rem;
+  }
+  .learn b{
+    font-family:"Hiragino Kaku Gothic ProN",sans-serif;
+    color:var(--rust-d);display:block;margin-bottom:4px;font-size:.74rem;
+    letter-spacing:.08em;
+  }
+  .raw{
+    margin-top:8px;padding:13px 16px;
+    background:#23201c;color:#e8e0d0;border-radius:3px;font-size:.84rem;
+  }
+  .raw b{
+    font-family:"Hiragino Kaku Gothic ProN",sans-serif;
+    color:var(--gold);display:block;margin-bottom:4px;font-size:.74rem;
+    letter-spacing:.08em;
+  }
+  .raw code{
+    font-family:"SFMono-Regular",Consolas,monospace;font-size:.82em;
+    background:rgba(255,255,255,.1);padding:1px 5px;border-radius:2px;
+  }
+
+  .depth{
+    display:inline-block;font-family:"Hiragino Kaku Gothic ProN",sans-serif;
+    font-size:.66rem;letter-spacing:.1em;padding:3px 9px;border-radius:2px;
+    margin-left:auto;font-weight:700;
+  }
+  .d-rag{background:#1d4e54;color:#cdeef0}
+  .d-agent{background:var(--rust);color:#fff}
+
+  /* matrix */
+  .matrix{margin:30px 0;width:100%;border-collapse:collapse;font-size:.84rem}
+  .matrix th,.matrix td{border:1px solid var(--line);padding:9px 12px;text-align:left}
+  .matrix th{background:var(--ink);color:var(--paper);
+    font-family:"Hiragino Kaku Gothic ProN",sans-serif;font-weight:600;font-size:.78rem}
+  .matrix tr:nth-child(even) td{background:var(--paper2)}
+  .matrix .y{color:var(--teal);font-weight:700}
+
+  footer{
+    margin-top:70px;padding:40px 24px 60px;border-top:3px double var(--ink);
+    font-size:.85rem;color:var(--mute);
+  }
+  footer b{color:var(--ink)}
+  a{color:var(--rust-d)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="eyebrow">Self-Built Curriculum / Hands-on</div>
+    <h1>素のSDKで作る<br><span class="alt">汎用チャットアプリ</span>で学ぶ<br>LLM機能開発</h1>
+    <p class="lede">フレームワークが隠す部分を、自分の手で書く。会話履歴の組み立て、ツール実行ループ、ストリーミングのパース、メモリの永続化──「Mastraが代わりにやってくれること」を全部自前で実装しながら、LLM機能開発の骨格を身につける構成。</p>
+    <div class="meta">
+      <span class="tag hot">主軸：素のAnthropic / OpenAI SDK</span>
+      <span class="tag">器：汎用チャットアプリ（全部入り）</span>
+      <span class="tag">深掘り①：RAG・検索精度</span>
+      <span class="tag">深掘り②：エージェント設計（マルチ/HITL）</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="note">
+    <h3>このカリキュラムの方針</h3>
+    <p>素のSDKを主軸にすると、Function Calling のループ、SSEストリームのパース、会話履歴やメモリのデータ設計、トークン管理などを<b>自分で書くことになる</b>。これは遠回りに見えて、どのフレームワーク（Mastra / LangChain / 自社実装）に移っても通用する土台になる。</p>
+    <p>各章には「<b>学べること</b>」（普遍スキル）と「<b>素のSDKだと自分で書く部分</b>」（フレームワークが隠蔽している実体）を併記した。RAG章とエージェント章を厚めにしてある。</p>
+  </div>
+
+  <!-- PART 1 -->
+  <div class="part">
+    <div class="part-num">PART Ⅰ ── FOUNDATION</div>
+    <div class="part-title">第1部　LLM呼び出しの土台</div>
+    <p class="part-desc">フレームワーク抜きで「LLMを叩く」ところから。ここを自前で書けると以降が全部読める。</p>
+  </div>
+
+  <div class="chap">
+    <div class="chap-head">
+      <span class="chap-no">1</span>
+      <div>
+        <div class="chap-title">LLM機能開発の全体像とSDKの基礎</div>
+        <div class="chap-sub">Chat Completions / Messages API の生の形を知る</div>
+      </div>
+    </div>
+    <div class="chap-body">
+      <ul class="topics">
+        <li>LLMアプリの構成要素（モデル・プロンプト・コンテキスト・ツール・状態）</li>
+        <li>Anthropic Messages API と OpenAI Chat Completions API の構造比較</li>
+        <li>system / user / assistant ロールと messages 配列の組み立て</li>
+        <li>温度・max_tokens・stop などパラメータの意味と影響</li>
+        <li>APIキー管理・環境変数・レート制限とリトライ</li>
+      </ul>
+      <div class="learn"><b>学べること</b>「LLMは状態を持たない関数」という前提。毎リクエストで全状態を送る必要があるという、後続すべての設計の起点。</div>
+      <div class="raw"><b>素のSDKだと自分で書く部分</b><code>messages</code>配列の手組み、エラーハンドリング、指数バックオフ、429対応</div>
+    </div>
+  </div>
+
+  <div class="chap">
+    <div class="chap-head">
+      <span class="chap-no">2</span>
+      <div>
+        <div class="chap-title">ストリーミング応答の実装</div>
+        <div class="chap-sub">SSEを自分でパースしてチャットUIに流す</div>
+      </div>
+    </div>
+    <div class="chap-body">
+      <ul class="topics">
+        <li>ストリーミングが必要な理由（体感速度・UX）</li>
+        <li>Server-Sent Events (SSE) の仕組みとイベント種別</li>
+        <li><code style="font-family:monospace">stream: true</code> のレスポンスを逐次パースする</li>
+        <li>差分チャンク（delta）の結合とフロントへの中継</li>
+        <li>途中キャンセル（AbortController）と部分応答の保存</li>
+      </ul>
+      <div class="learn"><b>学べること</b>Vercel AI SDKの<code style="font-family:monospace">useChat</code>が裏で何をしているか。SSEの生パースを通じてストリーミングの実体が見える。</div>
+      <div class="raw"><b>素のSDKだと自分で書く部分</b>SSEパーサ、delta結合ロジック、ストリーム中のツール呼び出し検出</div>
+    </div>
+  </div>
+
+  <div class="chap">
+    <div class="chap-head">
+      <span class="chap-no">3</span>
+      <div>
+        <div class="chap-title">構造化出力（Structured Output）</div>
+        <div class="chap-sub">LLMの出力をアプリで使えるデータにする</div>
+      </div>
+    </div>
+    <div class="chap-body">
+      <ul class="topics">
+        <li>自然言語出力とJSON出力の使い分け</li>
+        <li>JSON Schema / response_format による出力制約</li>
+        <li>Zodによるスキーマ定義と型安全なパース</li>
+        <li>出力が壊れたときのリトライ・バリデーション戦略</li>
+        <li>分類・抽出・ルーティングへの応用</li>
+      </ul>
+      <div class="learn"><b>学べること</b>LLMを「曖昧な文章生成器」から「信頼できるデータ変換器」にする方法。後のガードレールや評価の前提になる。</div>
+    </div>
+  </div>
+
+  <!-- PART 2 -->
+  <div class="part">
+    <div class="part-num">PART Ⅱ ── CHAT APP CORE</div>
+    <div class="part-title">第2部　チャットアプリの基盤を組む</div>
+    <p class="part-desc">器となる汎用チャットアプリを立ち上げ、会話を「続けられる」状態にする。</p>
+  </div>
+
+  <div class="chap">
+    <div class="chap-head">
+      <span class="chap-no">4</span>
+      <div>
+        <div class="chap-title">チャットアプリの土台構築</div>
+        <div class="chap-sub">Next.js + APIルート + チャットUI</div>
+      </div>
+    </div>
+    <div class="chap-body">
+      <ul class="topics">
+        <li>Next.js (App Router) でのプロジェクト構成</li>
+        <li>チャットAPIルートの設計（リクエスト→LLM→ストリーム返却）</li>
+        <li>フロント：メッセージ一覧・入力欄・ストリーミング表示</li>
+        <li>サーバー／クライアントの責務分割</li>
+      </ul>
+      <div class="learn"><b>学べること</b>BFFパターンでのLLM中継。あなたのNest.js BFF経験がそのまま活きる層。</div>
+    </div>
+  </div>
+
+  <div class="chap">
+    <div class="chap-head">
+      <span class="chap-no">5</span>
+      <div>
+        <div class="chap-title">会話履歴の永続化とスレッド管理</div>
+        <div class="chap-sub">「記憶しないLLM」に文脈を持たせる①</div>
+      </div>
+    </div>
+    <div class="chap-body">
+      <ul class="topics">
+        <li>会話履歴をDBに保存する設計（thread / message テーブル）</li>
+        <li>スレッド一覧・作成・削除・切り替え</li>
+        <li>履歴をmessages配列に再構築してLLMに渡す</li>
+        <li>スレッドタイトルのLLM自動生成</li>
+        <li>コンテキスト長の限界と履歴の切り詰め戦略</li>
+      </ul>
+      <div class="learn"><b>学べること</b>「メモリ」の正体は履歴のDB保存＋再注入だと体で理解する。フレームワークのMemory抽象が何を隠しているか分かる。</div>
+      <div class="raw"><b>素のSDKだと自分で書く部分</b>スキーマ設計、履歴の組み立て、トークン超過時のトリミング</div>
+    </div>
+  </div>
+
+  <div class="chap">
+    <div class="chap-head">
+      <span class="chap-no">6</span>
+      <div>
+        <div class="chap-title">マルチモデル対応とフォールバック</div>
+        <div class="chap-sub">モデルを差し替え可能にする</div>
+      </div>
+    </div>
+    <div class="chap-body">
+      <ul class="topics">
+        <li>プロバイダー差を吸収する抽象レイヤーの自作</li>
+        <li>用途別モデル選択（高速・高品質・安価）</li>
+        <li>エラー時のフォールバックとリトライ</li>
+        <li>コスト・レイテンシのトレードオフ設計</li>
+      </ul>
+      <div class="learn"><b>学べること</b>あなたが実務でやっている「実装はDeepSeek、レビューはGPT-5.4」のような<b>モデルルーティング</b>を、アプリ層で実装する勘所。</div>
+    </div>
+  </div>
+
+  <!-- PART 3 RAG -->
+  <div class="part">
+    <div class="part-num">PART Ⅲ ── RAG（深掘り）</div>
+    <div class="part-title">第3部　RAGと検索精度</div>
+    <p class="part-desc">チャットに「社内ドキュメントを参照する」能力を足す。検索精度に最も紙幅を割く部。</p>
+  </div>
+
+  <div class="chap">
+    <div class="chap-head">
+      <span class="chap-no">7</span>
+      <div>
+        <div class="chap-title">RAGの基礎と最小実装</div>
+        <div class="chap-sub">検索拡張生成のパイプラインを一通り通す</div>
+      </div>
+      <span class="depth d-rag">RAG 深掘り</span>
+    </div>
+    <div class="chap-body">
+      <ul class="topics">
+        <li>RAGが必要な理由（最新性・社内知識・ハルシネーション抑制）</li>
+        <li>パイプライン全体像：チャンク化→埋め込み→格納→検索→生成</li>
+        <li>ベクトルDBの選択（pgvector / LanceDB / Qdrant 等）</li>
+        <li>埋め込みモデルの選択と次元数</li>
+        <li>取得した文脈をプロンプトに注入する</li>
+      </ul>
+      <div class="learn"><b>学べること</b>RAGは魔法ではなく「検索結果をプロンプトに貼るだけ」。だからこそ検索の質が全てだと分かる。</div>
+    </div>
+  </div>
+
+  <div class="chap">
+    <div class="chap-head">
+      <span class="chap-no">8</span>
+      <div>
+        <div class="chap-title">チャンク化と埋め込みの設計</div>
+        <div class="chap-sub">検索精度はここで7割決まる</div>
+      </div>
+      <span class="depth d-rag">RAG 深掘り</span>
+    </div>
+    <div class="chap-body">
+      <ul class="topics">
+        <li>チャンク戦略（固定長 / 文単位 / Markdown構造 / セマンティック）</li>
+        <li>チャンクサイズとオーバーラップのチューニング</li>
+        <li>メタデータ付与（出典・章・更新日）とフィルタ検索</li>
+        <li>日本語処理の注意点（トークナイズ・CJK）</li>
+        <li>埋め込み時のprefix（E5の<code>passage:</code>/<code>query:</code>等）</li>
+      </ul>
+      <div class="learn"><b>学べること</b>あなたのDevVault（LanceDB + BM25 + E5）の知見と直結。チャンク設計の良し悪しが検索ヒット率に直接効くことを実測する。</div>
+    </div>
+  </div>
+
+  <div class="chap">
+    <div class="chap-head">
+      <span class="chap-no">9</span>
+      <div>
+        <div class="chap-title">検索精度の向上：ハイブリッド検索とリランク</div>
+        <div class="chap-sub">ベクトル検索だけでは足りない</div>
+      </div>
+      <span class="depth d-rag">RAG 深掘り</span>
+    </div>
+    <div class="chap-body">
+      <ul class="topics">
+        <li>ベクトル検索の弱点（固有名詞・略語・完全一致）</li>
+        <li>BM25（全文検索）との併用＝ハイブリッド検索</li>
+        <li>スコア統合（RRF：Reciprocal Rank Fusion）</li>
+        <li>リランカー（cross-encoder）による並べ替え</li>
+        <li>クエリ拡張・HyDE・マルチクエリ</li>
+      </ul>
+      <div class="learn"><b>学べること</b>「なぜ正しい文書が出てこないか」を切り分ける技術。検索精度の改善が体系的にできるようになる。</div>
+      <div class="raw"><b>素のSDKだと自分で書く部分</b>BM25とベクトルのスコア統合、RRF、リランク呼び出しの組み込み</div>
+    </div>
+  </div>
+
+  <div class="chap">
+    <div class="chap-head">
+      <span class="chap-no">10</span>
+      <div>
+        <div class="chap-title">RAGの評価と継続改善</div>
+        <div class="chap-sub">精度を「感覚」から「数字」にする</div>
+      </div>
+      <span class="depth d-rag">RAG 深掘り</span>
+    </div>
+    <div class="chap-body">
+      <ul class="topics">
+        <li>検索評価指標（Recall@k / MRR / nDCG）</li>
+        <li>生成評価（忠実性 Faithfulness / 関連性 Relevance）</li>
+        <li>評価データセットの作り方</li>
+        <li>RAGAS等の評価フレームワークの考え方</li>
+        <li>ドキュメント更新時の再取り込み（差分インデックス）</li>
+      </ul>
+      <div class="learn"><b>学べること</b>「なんとなく良くなった」を排し、検索改善を定量で回す。あなたのDORA/メトリクス志向と相性が良い。</div>
+    </div>
+  </div>
+
+  <!-- PART 4 AGENT -->
+  <div class="part">
+    <div class="part-num">PART Ⅳ ── AGENT（深掘り）</div>
+    <div class="part-title">第4部　エージェント設計（マルチ / HITL）</div>
+    <p class="part-desc">チャットに「自分でツールを使い、判断し、人間に確認を取る」能力を足す。もう一つの深掘り部。</p>
+  </div>
+
+  <div class="chap">
+    <div class="chap-head">
+      <span class="chap-no">11</span>
+      <div>
+        <div class="chap-title">ツール呼び出し（Function Calling）の実装</div>
+        <div class="chap-sub">エージェントの心臓部を自前で書く</div>
+      </div>
+      <span class="depth d-agent">エージェント 深掘り</span>
+    </div>
+    <div class="chap-body">
+      <ul class="topics">
+        <li>ツール定義（名前・説明・パラメータスキーマ）</li>
+        <li>LLMがツールを要求→実行→結果を返す<b>ループ</b></li>
+        <li>複数ツール・並列ツール呼び出しの扱い</li>
+        <li>ツール実行エラーのLLMへの差し戻し</li>
+        <li>ツールとしてのRAG検索（第3部との接続）</li>
+      </ul>
+      <div class="learn"><b>学べること</b>「エージェント＝LLM＋ツール＋ループ」の正体。このループを手で書くと、あらゆるエージェントフレームワークの中身が見える。</div>
+      <div class="raw"><b>素のSDKだと自分で書く部分</b><code>tool_use</code>/<code>tool_result</code>のやり取り、実行ループ、最大反復数の制御</div>
+    </div>
+  </div>
+
+  <div class="chap">
+    <div class="chap-head">
+      <span class="chap-no">12</span>
+      <div>
+        <div class="chap-title">Human-in-the-Loop（HITL）</div>
+        <div class="chap-sub">危険な操作の前に人間の承認を挟む</div>
+      </div>
+      <span class="depth d-agent">エージェント 深掘り</span>
+    </div>
+    <div class="chap-body">
+      <ul class="topics">
+        <li>HITLが必要な場面（破壊的操作・外部送信・課金）</li>
+        <li>承認ゲートの設計（実行前に止めて人間に問う）</li>
+        <li>実行状態の中断と再開（状態スナップショット）</li>
+        <li>「提案するが適用しない」パターン</li>
+        <li>承認UIとチャットフローの統合</li>
+      </ul>
+      <div class="learn"><b>学べること</b>あなたが既に作っている「propose-don't-apply」（pw-impact-analysis等）の設計思想を、汎用的なワークフロー制御として実装する。</div>
+      <div class="raw"><b>素のSDKだと自分で書く部分</b>実行の中断点、状態の永続化と復元、再開時のmessages再構築</div>
+    </div>
+  </div>
+
+  <div class="chap">
+    <div class="chap-head">
+      <span class="chap-no">13</span>
+      <div>
+        <div class="chap-title">マルチエージェント設計</div>
+        <div class="chap-sub">役割を分けて協調させる</div>
+      </div>
+      <span class="depth d-agent">エージェント 深掘り</span>
+    </div>
+    <div class="chap-body">
+      <ul class="topics">
+        <li>単一エージェントの限界とタスク分解</li>
+        <li>スーパーバイザー（オーケストレーター）パターン</li>
+        <li>サブエージェントへの委譲と結果の集約</li>
+        <li>エージェント間の状態・コンテキスト受け渡し</li>
+        <li>役割別モデル選択（軽いタスクは安いモデルへ）</li>
+      </ul>
+      <div class="learn"><b>学べること</b>「マルチエージェント＝タスク分解」。役割分割の設計判断と、過剰分割の落とし穴を学ぶ。</div>
+    </div>
+  </div>
+
+  <div class="chap">
+    <div class="chap-head">
+      <span class="chap-no">14</span>
+      <div>
+        <div class="chap-title">エージェント的ワークフローと制御フロー</div>
+        <div class="chap-sub">自由なエージェントと固いワークフローの間</div>
+      </div>
+      <span class="depth d-agent">エージェント 深掘り</span>
+    </div>
+    <div class="chap-body">
+      <ul class="topics">
+        <li>「LLMに任せる」vs「処理を固定する」の使い分け</li>
+        <li>分岐・ループ・並列の制御フロー</li>
+        <li>信頼性のための明示的なステップ設計</li>
+        <li>失敗時のリカバリと冪等性</li>
+      </ul>
+      <div class="learn"><b>学べること</b>どこをLLMの裁量に任せ、どこをコードで固めるか。プロダクションでの信頼性を左右する設計判断。</div>
+    </div>
+  </div>
+
+  <!-- PART 5 PROD -->
+  <div class="part">
+    <div class="part-num">PART Ⅴ ── PRODUCTION</div>
+    <div class="part-title">第5部　本番運用に耐えるアプリにする</div>
+    <p class="part-desc">動くものから、出せるものへ。安全・観測・評価・配備。</p>
+  </div>
+
+  <div class="chap">
+    <div class="chap-head">
+      <span class="chap-no">15</span>
+      <div>
+        <div class="chap-title">ガードレールと安全対策</div>
+        <div class="chap-sub">入力と出力を守る</div>
+      </div>
+    </div>
+    <div class="chap-body">
+      <ul class="topics">
+        <li>入力ガードレール（プロンプトインジェクション対策）</li>
+        <li>出力ガードレール（PII・有害・機密の検出）</li>
+        <li>ツール実行の権限制御とサンドボックス</li>
+        <li>RAGにおける出典の強制と幻覚抑制</li>
+      </ul>
+      <div class="learn"><b>学べること</b>OWASP LLM Top 10 の観点を実装に落とす。あなたのAIガバナンス知見と直結。</div>
+    </div>
+  </div>
+
+  <div class="chap">
+    <div class="chap-head">
+      <span class="chap-no">16</span>
+      <div>
+        <div class="chap-title">オブザーバビリティ（LLMOps）</div>
+        <div class="chap-sub">何が起きているか見えるようにする</div>
+      </div>
+    </div>
+    <div class="chap-body">
+      <ul class="topics">
+        <li>トレースの構造（リクエスト→ツール→生成のスパン）</li>
+        <li>OpenTelemetry / Langfuse 等での計装</li>
+        <li>トークン・コスト・レイテンシの可視化</li>
+        <li>本番ログから改善点を見つける</li>
+      </ul>
+      <div class="learn"><b>学べること</b>あなたがCodex CLIで検討していたLangfuse / Phoenix のOTel計装を、アプリ側で実装する。</div>
+    </div>
+  </div>
+
+  <div class="chap">
+    <div class="chap-head">
+      <span class="chap-no">17</span>
+      <div>
+        <div class="chap-title">評価（Evaluation）</div>
+        <div class="chap-sub">変更が改善か劣化かを判定する</div>
+      </div>
+    </div>
+    <div class="chap-body">
+      <ul class="topics">
+        <li>バッチ評価（データセット）とライブ評価の違い</li>
+        <li>LLM-as-a-Judge とコード/NLPスコアラー</li>
+        <li>評価データセットとルーブリックの設計</li>
+        <li>n回試行・中央値+IQRでの分散評価</li>
+        <li>回帰検出：プロンプト変更で壊れていないか</li>
+      </ul>
+      <div class="learn"><b>学べること</b>あなたのharness評価設計（n≥5・median+IQR・rubric採点）を、アプリ機能の評価に応用する。</div>
+    </div>
+  </div>
+
+  <div class="chap">
+    <div class="chap-head">
+      <span class="chap-no">18</span>
+      <div>
+        <div class="chap-title">認証・課金・デプロイ</div>
+        <div class="chap-sub">サービスとして成立させる</div>
+      </div>
+    </div>
+    <div class="chap-body">
+      <ul class="topics">
+        <li>認証・認可（ルート保護、APIキー管理）</li>
+        <li>トークン使用量の追跡とプラン別制限</li>
+        <li>コスト管理とレート制御</li>
+        <li>デプロイ（Vercel / Cloud Run / コンテナ）とCI/CD</li>
+        <li>データ永続化（DB・ベクトルストア）の本番構成</li>
+      </ul>
+      <div class="learn"><b>学べること</b>LLMアプリ特有の「従量課金をどう個人/プランに割り当てるか」。あなたのChatGPT Business/Codexシート設計の検討と地続き。</div>
+    </div>
+  </div>
+
+  <!-- matrix -->
+  <div class="part">
+    <div class="part-num">SUMMARY</div>
+    <div class="part-title">学べる要素マップ</div>
+  </div>
+
+  <table class="matrix">
+    <thead>
+      <tr><th>カテゴリ</th><th>学べる要素</th><th>該当章</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="y">基礎</td><td>API構造 / プロンプト / ストリーミング / 構造化出力</td><td>1–3</td></tr>
+      <tr><td class="y">状態管理</td><td>会話履歴・スレッド・メモリ・コンテキスト管理</td><td>5</td></tr>
+      <tr><td class="y">モデル運用</td><td>マルチモデル・ルーティング・フォールバック</td><td>6</td></tr>
+      <tr><td class="y">RAG</td><td>チャンク・埋め込み・ハイブリッド検索・リランク・RAG評価</td><td>7–10</td></tr>
+      <tr><td class="y">エージェント</td><td>ツール呼び出しループ・HITL・マルチエージェント・制御フロー</td><td>11–14</td></tr>
+      <tr><td class="y">安全</td><td>ガードレール・インジェクション対策・権限制御</td><td>15</td></tr>
+      <tr><td class="y">運用</td><td>オブザーバビリティ・評価・認証・課金・デプロイ</td><td>16–18</td></tr>
+    </tbody>
+  </table>
+
+</div>
+
+<footer>
+  <div class="wrap">
+    <p><b>進め方の提案：</b>第1〜2部で器を立ち上げ、第3部（RAG）と第4部（エージェント）を本命としてじっくり、第5部は「全部やる」より<b>1つ選んで本番品質まで仕上げる</b>のが現実的。各章は前章の成果物に積み上がる設計なので、汎用チャットアプリ1本に全要素が載っていく。</p>
+    <p style="margin-top:14px">※ 具体的な実装に入る際は、各SDK・ライブラリの<b>最新の公式ドキュメント</b>でAPI仕様を確認のうえ進めることを推奨。本目次は学習構造の設計であり、個別APIの最新仕様は別途要確認。</p>
+  </div>
+</footer>
+
+</body>
+</html>
