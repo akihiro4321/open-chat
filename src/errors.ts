@@ -28,6 +28,13 @@ export class ApplicationError extends Error {
   }
 }
 
+export class GenerationCancelledError extends Error {
+  constructor() {
+    super('回答生成を中断しました。');
+    this.name = 'GenerationCancelledError';
+  }
+}
+
 export function classifyOpenAIError(error: unknown): ApplicationError {
   if (error instanceof ApplicationError) {
     return error;

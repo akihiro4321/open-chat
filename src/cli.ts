@@ -1,6 +1,7 @@
 import { ConfigurationError, loadConfig } from './config.js';
-import { ApplicationError } from './errors.js';
-import { requestAnswer } from './openai-client.js';
+import { ApplicationError, GenerationCancelledError } from './errors.js';
+import type { ChatResult } from './openai-client.js';
+import { requestAnswerStream } from './openai-client.js';
 
 const DEFAULT_INSTRUCTION = 'あなたは正確で簡潔な日本語で回答するアシスタントです。';
 
@@ -77,10 +78,45 @@ async function main(): Promise<void> {
   }
 
   const config = loadConfig();
-  const result = await requestAnswer(config, options);
-
   console.log(`質問: ${options.question}`);
-  console.log(`回答: ${result.answer}`);
+  process.stdout.write('回答: ');
+
+  const abortController = new AbortController();
+  const cancelGeneration = (): void => {
+    abortController.abort();
+  };
+  process.once('SIGINT', cancelGeneration);
+
+  let result: ChatResult;
+  let hasReceivedText = false;
+
+  try {
+    result = await requestAnswerStream(config, options, {
+      onTextDelta: (delta) => {
+        hasReceivedText = true;
+        process.stdout.write(delta);
+      },
+      signal: abortController.signal,
+    });
+  } catch (error: unknown) {
+    process.stdout.write('\n');
+
+    if (error instanceof GenerationCancelledError) {
+      console.error('中断: 回答生成を中断しました。表示済みの内容は部分回答です。');
+      process.exitCode = 130;
+      return;
+    }
+
+    if (hasReceivedText) {
+      console.error('注意: 表示済みの内容は、生成途中で終了した部分回答です。');
+    }
+
+    throw error;
+  } finally {
+    process.removeListener('SIGINT', cancelGeneration);
+  }
+
+  process.stdout.write('\n');
   console.log(`モデル: ${result.model}`);
 
   if (result.usage) {
