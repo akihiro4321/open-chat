@@ -19,7 +19,8 @@
     "node": ">=20"
   },
   "dependencies": {
-    "openai": "^6.44.0"
+    "openai": "^6.44.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

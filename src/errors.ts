@@ -8,6 +8,8 @@ export type ErrorCategory =
   | 'timeout'
   | 'connection'
   | 'service_unavailable'
+  | 'refusal'
+  | 'incomplete_response'
   | 'invalid_response'
   | 'unknown';
 

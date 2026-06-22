@@ -1,8 +1,12 @@
 import OpenAI from 'openai';
+import { zodTextFormat } from 'openai/helpers/zod';
+import { ZodError } from 'zod';
 
 import type { AppConfig } from './config.js';
 import { ApplicationError, classifyOpenAIError, GenerationCancelledError } from './errors.js';
 import { withRetry } from './retry.js';
+import type { StructuredAnswer } from './structured-output.js';
+import { structuredAnswerSchema } from './structured-output.js';
 
 const REQUEST_TIMEOUT_MS = 30_000;
 const MAX_RETRIES = 2;
@@ -22,6 +26,12 @@ export interface TokenUsage {
 
 export interface ChatResult {
   answer: string;
+  model: string;
+  usage: TokenUsage | null;
+}
+
+export interface StructuredChatResult {
+  answer: StructuredAnswer;
   model: string;
   usage: TokenUsage | null;
 }
@@ -59,6 +69,12 @@ function toTokenUsage(
     : null;
 }
 
+function hasRefusal(response: OpenAI.Responses.Response): boolean {
+  return response.output.some(
+    (item) => item.type === 'message' && item.content.some((content) => content.type === 'refusal'),
+  );
+}
+
 export async function requestAnswer(config: AppConfig, request: ChatRequest): Promise<ChatResult> {
   const client = createClient(config);
 
@@ -85,6 +101,67 @@ export async function requestAnswer(config: AppConfig, request: ChatRequest): Pr
           usage: toTokenUsage(response.usage),
         };
       } catch (error: unknown) {
+        throw classifyOpenAIError(error);
+      }
+    },
+    {
+      maxRetries: MAX_RETRIES,
+      initialDelayMs: INITIAL_RETRY_DELAY_MS,
+      maxDelayMs: MAX_RETRY_DELAY_MS,
+    },
+  );
+}
+
+export async function requestStructuredAnswer(
+  config: AppConfig,
+  request: ChatRequest,
+): Promise<StructuredChatResult> {
+  const client = createClient(config);
+
+  return withRetry(
+    async () => {
+      try {
+        const response = await client.responses.parse({
+          model: config.model,
+          instructions: request.instruction,
+          input: request.question,
+          text: {
+            format: zodTextFormat(structuredAnswerSchema, 'structured_answer'),
+          },
+        });
+
+        if (hasRefusal(response)) {
+          throw new ApplicationError('refusal', 'OpenAIがこの質問への回答を拒否しました。');
+        }
+
+        if (response.status === 'incomplete') {
+          throw new ApplicationError(
+            'incomplete_response',
+            'OpenAIからの構造化回答が途中で終了しました。',
+          );
+        }
+
+        if (!response.output_parsed) {
+          throw new ApplicationError(
+            'invalid_response',
+            'OpenAIから検証可能な構造化回答を取得できませんでした。',
+          );
+        }
+
+        return {
+          answer: response.output_parsed,
+          model: response.model,
+          usage: toTokenUsage(response.usage),
+        };
+      } catch (error: unknown) {
+        if (error instanceof ZodError || error instanceof SyntaxError) {
+          throw new ApplicationError(
+            'invalid_response',
+            'OpenAIの構造化回答が期待する形式と一致しませんでした。',
+            { cause: error },
+          );
+        }
+
         throw classifyOpenAIError(error);
       }
     },

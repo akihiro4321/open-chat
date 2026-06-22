@@ -1,13 +1,15 @@
 import { ConfigurationError, loadConfig } from './config.js';
 import { ApplicationError, GenerationCancelledError } from './errors.js';
 import type { ChatResult } from './openai-client.js';
-import { requestAnswerStream } from './openai-client.js';
+import { requestAnswerStream, requestStructuredAnswer } from './openai-client.js';
+import type { StructuredAnswer } from './structured-output.js';
 
 const DEFAULT_INSTRUCTION = 'あなたは正確で簡潔な日本語で回答するアシスタントです。';
 
 interface CliOptions {
   question: string;
   instruction: string;
+  structured: boolean;
 }
 
 class InputError extends Error {
@@ -19,7 +21,10 @@ class InputError extends Error {
 
 function printUsage(): void {
   console.log(`使い方:
-  npm run chat -- --question "質問" [--instruction "AIへの指示"]
+  npm run chat -- --question "質問" [--instruction "AIへの指示"] [--structured]
+
+オプション:
+  --structured  回答を分類・要約・要点の構造化データとして取得
 
 必要な環境変数:
   OPENAI_API_KEY  OpenAI APIキー
@@ -39,6 +44,7 @@ function readOptionValue(args: string[], index: number, name: string): string {
 function parseArguments(args: string[]): CliOptions | null {
   let question: string | undefined;
   let instruction = DEFAULT_INSTRUCTION;
+  let structured = false;
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
@@ -59,6 +65,11 @@ function parseArguments(args: string[]): CliOptions | null {
       continue;
     }
 
+    if (argument === '--structured') {
+      structured = true;
+      continue;
+    }
+
     throw new InputError(`不明な引数です: ${argument ?? ''}`);
   }
 
@@ -66,17 +77,44 @@ function parseArguments(args: string[]): CliOptions | null {
     throw new InputError('--question は必須です。');
   }
 
-  return { question, instruction };
+  return { question, instruction, structured };
 }
 
-async function main(): Promise<void> {
-  const options = parseArguments(process.argv.slice(2));
+function printUsageResult(result: ChatResult['usage']): void {
+  if (result) {
+    console.log(
+      `使用量: 入力 ${result.inputTokens} / 出力 ${result.outputTokens} / 合計 ${result.totalTokens} トークン`,
+    );
+  } else {
+    console.log('使用量: 取得できませんでした');
+  }
+}
 
-  if (!options) {
-    printUsage();
-    return;
+const CATEGORY_LABELS: Record<StructuredAnswer['category'], string> = {
+  fact: '事実',
+  explanation: '説明',
+  procedure: '手順',
+  other: 'その他',
+};
+
+async function runStructuredChat(options: CliOptions): Promise<void> {
+  const result = await requestStructuredAnswer(loadConfig(), options);
+
+  console.log(`質問: ${options.question}`);
+  console.log('構造化回答:');
+  console.log(`  分類: ${CATEGORY_LABELS[result.answer.category]}`);
+  console.log(`  要約: ${result.answer.summary}`);
+  console.log('  要点:');
+
+  for (const keyPoint of result.answer.keyPoints) {
+    console.log(`    - ${keyPoint}`);
   }
 
+  console.log(`モデル: ${result.model}`);
+  printUsageResult(result.usage);
+}
+
+async function runStreamingChat(options: CliOptions): Promise<void> {
   const config = loadConfig();
   console.log(`質問: ${options.question}`);
   process.stdout.write('回答: ');
@@ -118,14 +156,23 @@ async function main(): Promise<void> {
 
   process.stdout.write('\n');
   console.log(`モデル: ${result.model}`);
+  printUsageResult(result.usage);
+}
 
-  if (result.usage) {
-    console.log(
-      `使用量: 入力 ${result.usage.inputTokens} / 出力 ${result.usage.outputTokens} / 合計 ${result.usage.totalTokens} トークン`,
-    );
-  } else {
-    console.log('使用量: 取得できませんでした');
+async function main(): Promise<void> {
+  const options = parseArguments(process.argv.slice(2));
+
+  if (!options) {
+    printUsage();
+    return;
   }
+
+  if (options.structured) {
+    await runStructuredChat(options);
+    return;
+  }
+
+  await runStreamingChat(options);
 }
 
 main().catch((error: unknown) => {
