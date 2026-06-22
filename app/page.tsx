@@ -3,11 +3,12 @@
 import type { FormEvent } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { chatStreamEventSchema } from '../src/chat-protocol.js';
+import { chatStreamEventSchema } from '@/src/chat-protocol.js';
 
 interface ThreadSummary {
   id: string;
   title: string;
+  model?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -22,6 +23,8 @@ interface Message {
 
 interface RunDetails {
   model: string;
+  requestedModel?: string | null;
+  fallbackUsed?: boolean;
   inputTokens?: number | null;
   outputTokens?: number | null;
   totalTokens?: number | null;
@@ -41,6 +44,8 @@ export default function ChatPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [runDetails, setRunDetails] = useState<RunDetails | null>(null);
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [selectedModel, setSelectedModel] = useState('');
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const loadThread = useCallback(async (threadId: string): Promise<void> => {
@@ -49,8 +54,9 @@ export default function ChatPage() {
       throw new Error(await readApiError(response));
     }
 
-    const thread = (await response.json()) as { messages: Message[] };
+    const thread = (await response.json()) as { messages: Message[]; model: string };
     setActiveThreadId(threadId);
+    setSelectedModel(thread.model);
     setMessages(thread.messages);
     const lastRun = thread.messages.toReversed().find((message) => message.modelRun)?.modelRun;
     setRunDetails(lastRun ?? null);
@@ -65,6 +71,7 @@ export default function ChatPage() {
     const thread = (await response.json()) as ThreadSummary;
     setThreads((current) => [thread, ...current]);
     setActiveThreadId(thread.id);
+    if (thread.model) setSelectedModel(thread.model);
     setMessages([]);
     setRunDetails(null);
     return thread;
@@ -73,6 +80,17 @@ export default function ChatPage() {
   useEffect(() => {
     void (async () => {
       try {
+        const modelsResponse = await fetch('/api/models');
+        if (!modelsResponse.ok) {
+          throw new Error(await readApiError(modelsResponse));
+        }
+        const modelConfig = (await modelsResponse.json()) as {
+          defaultModel: string;
+          models: string[];
+        };
+        setAvailableModels(modelConfig.models);
+        setSelectedModel(modelConfig.defaultModel);
+
         const response = await fetch('/api/threads');
         if (!response.ok) {
           throw new Error(await readApiError(response));
@@ -117,7 +135,18 @@ export default function ChatPage() {
       throw new Error(event.message);
     }
 
-    const modelRun = event.usage ? { model: event.model, ...event.usage } : { model: event.model };
+    const modelRun = event.usage
+      ? {
+          model: event.model,
+          requestedModel: event.requestedModel,
+          fallbackUsed: event.fallbackUsed,
+          ...event.usage,
+        }
+      : {
+          model: event.model,
+          requestedModel: event.requestedModel,
+          fallbackUsed: event.fallbackUsed,
+        };
     setRunDetails(modelRun);
     updateAssistant(assistantId, {
       id: event.assistantMessageId,
@@ -228,6 +257,27 @@ export default function ChatPage() {
     }
   };
 
+  const changeModel = async (model: string): Promise<void> => {
+    if (!activeThreadId || isGenerating || model === selectedModel) return;
+
+    const response = await fetch(`/api/threads/${activeThreadId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model }),
+    });
+
+    if (!response.ok) {
+      setError(await readApiError(response));
+      return;
+    }
+
+    setSelectedModel(model);
+    setThreads((current) =>
+      current.map((thread) => (thread.id === activeThreadId ? { ...thread, model } : thread)),
+    );
+    setError(null);
+  };
+
   return (
     <main className="workspace">
       <aside className="sidebar">
@@ -276,7 +326,21 @@ export default function ChatPage() {
       <section className="chat-panel">
         <header className="app-header">
           <h2>{threads.find((thread) => thread.id === activeThreadId)?.title ?? 'Open Chat'}</h2>
-          <span className="status-badge">OpenAI</span>
+          <div className="model-control">
+            <label htmlFor="model">モデル</label>
+            <select
+              disabled={isGenerating || !activeThreadId}
+              id="model"
+              onChange={(event) => void changeModel(event.target.value)}
+              value={selectedModel}
+            >
+              {availableModels.map((model) => (
+                <option key={model} value={model}>
+                  {model}
+                </option>
+              ))}
+            </select>
+          </div>
         </header>
 
         <section className="messages" aria-label="メッセージ一覧" aria-live="polite">
@@ -306,6 +370,9 @@ export default function ChatPage() {
         {runDetails && (
           <p className="run-details">
             モデル: {runDetails.model}
+            {runDetails.fallbackUsed && runDetails.requestedModel
+              ? `（${runDetails.requestedModel}からフォールバック）`
+              : ''}
             {runDetails.totalTokens != null && ` · 合計 ${runDetails.totalTokens} トークン`}
           </p>
         )}

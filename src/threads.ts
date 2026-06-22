@@ -6,12 +6,15 @@ export const DEFAULT_THREAD_TITLE = '新しいチャット';
 export async function listThreads() {
   return prisma.thread.findMany({
     orderBy: { updatedAt: 'desc' },
-    select: { id: true, title: true, createdAt: true, updatedAt: true },
+    select: { id: true, title: true, model: true, createdAt: true, updatedAt: true },
   });
 }
 
-export async function createThread() {
-  return prisma.thread.create({ data: {}, select: { id: true, title: true } });
+export async function createThread(model: string) {
+  return prisma.thread.create({
+    data: { model },
+    select: { id: true, title: true, model: true },
+  });
 }
 
 export async function getThread(threadId: string) {
@@ -29,6 +32,18 @@ export async function getThread(threadId: string) {
 export async function deleteThread(threadId: string): Promise<boolean> {
   const result = await prisma.thread.deleteMany({ where: { id: threadId } });
   return result.count > 0;
+}
+
+export async function getThreadModel(threadId: string) {
+  return prisma.thread.findUnique({ where: { id: threadId }, select: { model: true } });
+}
+
+export async function updateThreadModel(threadId: string, model: string) {
+  return prisma.thread.update({
+    where: { id: threadId },
+    data: { model },
+    select: { id: true, model: true },
+  });
 }
 
 export async function beginGeneration(threadId: string, requestId: string, question: string) {
@@ -70,6 +85,8 @@ export async function finishGeneration(
   content: string,
   model: string,
   usage: TokenUsage | null,
+  requestedModel: string,
+  fallbackUsed: boolean,
 ) {
   return prisma.message.update({
     where: { id: messageId },
@@ -79,6 +96,8 @@ export async function finishGeneration(
       modelRun: {
         create: {
           model,
+          requestedModel,
+          fallbackUsed,
           inputTokens: usage?.inputTokens ?? null,
           outputTokens: usage?.outputTokens ?? null,
           totalTokens: usage?.totalTokens ?? null,

@@ -1,16 +1,17 @@
-import { chatRequestSchema } from '../../../src/chat-protocol.js';
-import { ConfigurationError, loadConfig } from '../../../src/config.js';
-import { ApplicationError, GenerationCancelledError } from '../../../src/errors.js';
-import { selectRecentHistory } from '../../../src/history.js';
-import { requestAnswer, requestAnswerStream } from '../../../src/openai-client.js';
+import { chatRequestSchema } from '@/src/chat-protocol.js';
+import { type AppConfig, ConfigurationError, loadConfig } from '@/src/config.js';
+import { ApplicationError, GenerationCancelledError } from '@/src/errors.js';
+import { selectRecentHistory } from '@/src/history.js';
+import { requestAnswer, requestAnswerStreamWithFallback } from '@/src/openai-client.js';
 import {
   beginGeneration,
   DEFAULT_THREAD_TITLE,
   finishGeneration,
   getPriorMessages,
+  getThreadModel,
   markGenerationEnded,
   updateThreadTitle,
-} from '../../../src/threads.js';
+} from '@/src/threads.js';
 
 export const runtime = 'nodejs';
 
@@ -21,10 +22,7 @@ function fallbackTitle(question: string): string {
   return normalized.length <= 30 ? normalized : `${normalized.slice(0, 29)}…`;
 }
 
-async function generateThreadTitle(
-  config: ReturnType<typeof loadConfig>,
-  question: string,
-): Promise<string> {
+async function generateThreadTitle(config: AppConfig, question: string): Promise<string> {
   try {
     const result = await requestAnswer(config, {
       instruction:
@@ -66,6 +64,23 @@ export async function POST(request: Request): Promise<Response> {
   } catch (error: unknown) {
     return Response.json({ message: publicErrorMessage(error) }, { status: 500 });
   }
+
+  const storedThread = await getThreadModel(parsedRequest.data.threadId);
+
+  if (!storedThread) {
+    return Response.json({ message: '指定されたスレッドが見つかりません。' }, { status: 404 });
+  }
+
+  const selectedModel = storedThread.model ?? config.model;
+
+  if (!config.allowedModels.includes(selectedModel)) {
+    return Response.json(
+      { message: 'このスレッドで選択されているモデルは現在利用できません。' },
+      { status: 400 },
+    );
+  }
+
+  const selectedConfig = { apiKey: config.apiKey, model: selectedModel };
 
   const generation = await beginGeneration(
     parsedRequest.data.threadId,
@@ -113,8 +128,9 @@ export async function POST(request: Request): Promise<Response> {
         }
       };
 
-      void requestAnswerStream(
-        config,
+      void requestAnswerStreamWithFallback(
+        selectedConfig,
+        config.fallbackModel,
         {
           instruction: CHAT_INSTRUCTION,
           question: parsedRequest.data.message,
@@ -129,10 +145,17 @@ export async function POST(request: Request): Promise<Response> {
         },
       )
         .then(async (result) => {
-          await finishGeneration(assistantMessage.id, result.answer, result.model, result.usage);
+          await finishGeneration(
+            assistantMessage.id,
+            result.answer,
+            result.model,
+            result.usage,
+            result.requestedModel,
+            result.fallbackUsed,
+          );
           const title =
             generation.thread.title === DEFAULT_THREAD_TITLE
-              ? await generateThreadTitle(config, parsedRequest.data.message)
+              ? await generateThreadTitle(selectedConfig, parsedRequest.data.message)
               : generation.thread.title;
 
           if (title !== generation.thread.title) {
@@ -144,6 +167,8 @@ export async function POST(request: Request): Promise<Response> {
             assistantMessageId: assistantMessage.id,
             threadTitle: title,
             model: result.model,
+            requestedModel: result.requestedModel,
+            fallbackUsed: result.fallbackUsed,
             usage: result.usage,
           });
         })

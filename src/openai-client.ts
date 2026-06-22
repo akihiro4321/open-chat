@@ -36,6 +36,11 @@ export interface ChatResult {
   usage: TokenUsage | null;
 }
 
+export interface FallbackChatResult extends ChatResult {
+  fallbackUsed: boolean;
+  requestedModel: string;
+}
+
 export interface StructuredChatResult {
   answer: StructuredAnswer;
   model: string;
@@ -274,4 +279,50 @@ export async function requestAnswerStream(
       maxDelayMs: MAX_RETRY_DELAY_MS,
     },
   );
+}
+
+const FALLBACK_ERROR_CATEGORIES = new Set([
+  'rate_limit',
+  'timeout',
+  'connection',
+  'service_unavailable',
+]);
+
+export async function requestAnswerStreamWithFallback(
+  config: AppConfig,
+  fallbackModel: string | null,
+  request: ChatRequest,
+  options: StreamOptions,
+): Promise<FallbackChatResult> {
+  let receivedText = false;
+  const trackedOptions: StreamOptions = {
+    ...options,
+    onTextDelta: (delta) => {
+      receivedText = true;
+      options.onTextDelta(delta);
+    },
+  };
+
+  try {
+    const result = await requestAnswerStream(config, request, trackedOptions);
+    return { ...result, fallbackUsed: false, requestedModel: config.model };
+  } catch (error: unknown) {
+    const canFallback =
+      !receivedText &&
+      fallbackModel &&
+      fallbackModel !== config.model &&
+      error instanceof ApplicationError &&
+      FALLBACK_ERROR_CATEGORIES.has(error.category);
+
+    if (!canFallback) {
+      throw error;
+    }
+
+    const result = await requestAnswerStream(
+      { ...config, model: fallbackModel },
+      request,
+      trackedOptions,
+    );
+    return { ...result, fallbackUsed: true, requestedModel: config.model };
+  }
 }

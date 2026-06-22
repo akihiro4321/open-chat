@@ -5,6 +5,7 @@ import { ApplicationError, GenerationCancelledError } from '../src/errors.js';
 import {
   requestAnswer,
   requestAnswerStream,
+  requestAnswerStreamWithFallback,
   requestStructuredAnswer,
 } from '../src/openai-client.js';
 
@@ -451,4 +452,64 @@ void test('AbortSignalによる中断を利用者の中断として扱う', asyn
   abortController.abort();
 
   await assert.rejects(result, GenerationCancelledError);
+});
+
+void test('一時障害が続いた場合だけ代替モデルへフォールバックする', async (context) => {
+  const originalFetch = globalThis.fetch;
+  const requestedModels: string[] = [];
+  let requestCount = 0;
+  context.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  globalThis.fetch = async (input, init) => {
+    const request = new Request(input, init);
+    const body = (await request.clone().json()) as { model: string };
+    requestedModels.push(body.model);
+    requestCount += 1;
+
+    if (requestCount <= 3) {
+      return Response.json(
+        { error: { message: 'temporary failure', type: 'server_error' } },
+        { status: 500 },
+      );
+    }
+
+    return streamResponse([
+      {
+        type: 'response.output_text.delta',
+        item_id: 'msg_test',
+        output_index: 0,
+        content_index: 0,
+        delta: '代替回答',
+        logprobs: [],
+        sequence_number: 1,
+      },
+      {
+        type: 'response.completed',
+        sequence_number: 2,
+        response: {
+          model: 'fallback-response-model',
+          usage: { input_tokens: 2, output_tokens: 3, total_tokens: 5 },
+        },
+      },
+    ]);
+  };
+
+  const result = await requestAnswerStreamWithFallback(
+    { apiKey: 'test-key', model: 'primary-model' },
+    'fallback-model',
+    { instruction: 'test instruction', question: 'test question' },
+    { onTextDelta: () => undefined },
+  );
+
+  assert.deepEqual(requestedModels, [
+    'primary-model',
+    'primary-model',
+    'primary-model',
+    'fallback-model',
+  ]);
+  assert.equal(result.requestedModel, 'primary-model');
+  assert.equal(result.model, 'fallback-response-model');
+  assert.equal(result.fallbackUsed, true);
 });

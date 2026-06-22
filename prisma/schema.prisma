@@ -10,6 +10,7 @@ datasource db {
 model Thread {
   id        String    @id @default(cuid())
   title     String    @default("新しいチャット")
+  model     String?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   messages  Message[]
@@ -31,12 +32,14 @@ model Message {
 }
 
 model ModelRun {
-  id           String   @id @default(cuid())
-  messageId    String   @unique
-  model        String
-  inputTokens  Int?
-  outputTokens Int?
-  totalTokens  Int?
-  createdAt    DateTime @default(now())
-  message      Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  id             String   @id @default(cuid())
+  messageId      String   @unique
+  model          String
+  requestedModel String?
+  fallbackUsed   Boolean  @default(false)
+  inputTokens    Int?
+  outputTokens   Int?
+  totalTokens    Int?
+  createdAt      DateTime @default(now())
+  message        Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
 }

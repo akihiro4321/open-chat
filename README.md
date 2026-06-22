@@ -14,6 +14,9 @@ OpenAI Responses APIへ質問を送り、回答を生成された部分から表
 npm install
 export OPENAI_API_KEY="..."
 export OPENAI_MODEL="使用するモデル名"
+export OPENAI_ALLOWED_MODELS="使用するモデル名,選択肢に加えるモデル名"
+# 任意: 一時障害時に一度だけ切り替えるモデル
+export OPENAI_FALLBACK_MODEL="代替モデル名"
 npm run chat -- --question "日本の首都はどこですか？"
 ```
 
@@ -27,6 +30,8 @@ npm run dev
 ブラウザはOpen ChatのAPIルートだけを呼び出し、APIキーはサーバー側の環境変数として扱います。回答は改行区切りJSONのストリームで受け取り、生成された部分から画面へ表示します。「停止」を押すとブラウザからOpenAI APIまで中断を伝播します。
 
 スレッドとメッセージは `prisma/open-chat.db` に保存されます。画面の左側でスレッドの作成、切り替え、削除ができ、再読み込み後も会話が残ります。モデルには直近40件かつ約80,000文字以内の履歴を渡します。最初の回答が完了すると、OpenAIでスレッド名を自動生成します。
+
+`OPENAI_ALLOWED_MODELS`にカンマ区切りで指定したモデルは、画面上でスレッドごとに選択できます。選択内容はスレッドへ保存され、API側でも許可一覧を検証します。`OPENAI_FALLBACK_MODEL`を指定すると、回答表示前の一時障害に限り、通常の再試行後に代替モデルへ一度だけ切り替えます。選択モデルと実際に使用されたモデルは実行記録へ保存されます。
 
 DBの中身はDBeaverでSQLite接続を作成し、`prisma/open-chat.db` を指定すると確認できます。Prismaのデータ閲覧画面を使う場合は次を実行します。
 

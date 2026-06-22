@@ -19,6 +19,8 @@ export const chatStreamEventSchema = z.discriminatedUnion('type', [
     assistantMessageId: z.string(),
     threadTitle: z.string(),
     model: z.string(),
+    requestedModel: z.string(),
+    fallbackUsed: z.boolean(),
     usage: tokenUsageSchema.nullable(),
   }),
   z.object({ type: z.literal('error'), message: z.string() }),

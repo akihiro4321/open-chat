@@ -12,7 +12,38 @@ void test('APIキーとモデル名の前後空白を除いて読み込む', () 
     {
       apiKey: 'test-key',
       model: 'test-model',
+      allowedModels: ['test-model'],
+      fallbackModel: null,
     },
+  );
+});
+
+void test('許可モデルとフォールバックモデルを読み込む', () => {
+  assert.deepEqual(
+    loadConfig({
+      OPENAI_API_KEY: 'test-key',
+      OPENAI_MODEL: 'primary-model',
+      OPENAI_ALLOWED_MODELS: 'primary-model, fallback-model, primary-model',
+      OPENAI_FALLBACK_MODEL: 'fallback-model',
+    }),
+    {
+      apiKey: 'test-key',
+      model: 'primary-model',
+      allowedModels: ['primary-model', 'fallback-model'],
+      fallbackModel: 'fallback-model',
+    },
+  );
+});
+
+void test('既定モデルが許可一覧に含まれなければ設定エラーにする', () => {
+  assert.throws(
+    () =>
+      loadConfig({
+        OPENAI_API_KEY: 'test-key',
+        OPENAI_MODEL: 'primary-model',
+        OPENAI_ALLOWED_MODELS: 'another-model',
+      }),
+    ConfigurationError,
   );
 });
 
