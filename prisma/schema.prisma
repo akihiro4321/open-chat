@@ -43,3 +43,63 @@ model ModelRun {
   createdAt      DateTime @default(now())
   message        Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
 }
+
+model RagIngestionRun {
+  id                  String          @id @default(cuid())
+  status              String
+  sourcePath          String
+  documentCount       Int             @default(0)
+  chunkCount          Int             @default(0)
+  chunkSize           Int
+  chunkOverlap        Int
+  embeddingModel      String
+  embeddingDimensions Int?
+  lancedbUri          String
+  tableName           String          @unique
+  errorMessage        String?
+  startedAt           DateTime        @default(now())
+  completedAt         DateTime?
+  documents           RagDocument[]
+  chunks              RagChunk[]
+  activeIndex         ActiveRagIndex?
+}
+
+model RagDocument {
+  id             String          @id @default(cuid())
+  ingestionRunId String
+  sourcePath     String
+  sourceName     String
+  contentHash    String
+  contentLength  Int
+  createdAt      DateTime        @default(now())
+  ingestionRun   RagIngestionRun @relation(fields: [ingestionRunId], references: [id], onDelete: Cascade)
+  chunks         RagChunk[]
+
+  @@index([ingestionRunId])
+  @@index([contentHash])
+}
+
+model RagChunk {
+  id             String          @id @default(cuid())
+  ingestionRunId String
+  documentId     String
+  sequence       Int
+  startOffset    Int
+  endOffset      Int
+  text           String
+  textHash       String
+  createdAt      DateTime        @default(now())
+  ingestionRun   RagIngestionRun @relation(fields: [ingestionRunId], references: [id], onDelete: Cascade)
+  document       RagDocument     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, sequence])
+  @@index([ingestionRunId])
+  @@index([textHash])
+}
+
+model ActiveRagIndex {
+  id             String          @id
+  ingestionRunId String          @unique
+  activatedAt    DateTime        @default(now())
+  ingestionRun   RagIngestionRun @relation(fields: [ingestionRunId], references: [id], onDelete: Cascade)
+}

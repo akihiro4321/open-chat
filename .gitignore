@@ -7,3 +7,4 @@ dist/
 prisma/*.db
 prisma/*.db-journal
 generated/prisma/
+data/lancedb/

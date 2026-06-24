@@ -53,6 +53,27 @@ npm run chat -- --question "味噌汁の作り方を教えてください" --str
 
 構造化回答では、通常回答と異なり生成途中のJSONは表示しません。回答拒否、出力途中、形式不正はそれぞれエラーとして扱います。
 
+## RAG文書取込
+
+第7章では、ローカルのMarkdownまたはテキストファイルを取り込み、チャンク化、OpenAI Embeddings APIでの埋め込み生成、LanceDBへのベクトル保存、SQLiteへのメタデータ保存までを実装しています。まだチャット回答への検索結果注入は行いません。
+
+取込対象の文書本文は、埋め込み生成のためOpenAI APIへ送信されます。API利用料が発生します。外部送信できない文書は取り込まないでください。
+
+```bash
+export OPENAI_API_KEY="..."
+export OPENAI_EMBEDDING_MODEL="text-embedding-3-small"
+npm run db:migrate
+npm run rag:ingest -- --path "docs/requirement"
+```
+
+任意でチャンクサイズとオーバーラップを指定できます。
+
+```bash
+npm run rag:ingest -- --path "docs/requirement" --chunk-size 1200 --chunk-overlap 200
+```
+
+RAGのメタデータは `prisma/open-chat.db` に、ベクトル索引は既定で `data/lancedb/` に保存されます。取込が最後まで成功した場合だけ、SQLite上の有効索引が新しい取込へ切り替わります。
+
 APIキーは環境変数からのみ読み取り、画面表示やファイル保存は行いません。
 
 回答は生成された部分から順に表示されます。生成中に `Ctrl+C` を押すとOpenAI APIへのリクエストを中断し、表示済みの内容を部分回答として残します。

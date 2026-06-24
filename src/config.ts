@@ -8,6 +8,15 @@ export interface RuntimeConfig extends AppConfig {
   fallbackModel: string | null;
 }
 
+export interface RagConfig {
+  apiKey: string;
+  embeddingModel: string;
+  embeddingDimensions: number | null;
+  lancedbDir: string;
+  chunkSize: number;
+  chunkOverlap: number;
+}
+
 export class ConfigurationError extends Error {
   constructor(message: string) {
     super(message);
@@ -45,4 +54,55 @@ export function loadConfig(
   }
 
   return { apiKey, model, allowedModels, fallbackModel };
+}
+
+function readPositiveInteger(
+  environment: Record<string, string | undefined>,
+  name: string,
+): number | null {
+  const rawValue = environment[name]?.trim();
+
+  if (!rawValue) {
+    return null;
+  }
+
+  const value = Number(rawValue);
+
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new ConfigurationError(`${name} は正の整数で指定してください。`);
+  }
+
+  return value;
+}
+
+export function loadRagConfig(
+  environment: Record<string, string | undefined> = process.env,
+): RagConfig {
+  const apiKey = environment.OPENAI_API_KEY?.trim();
+  const embeddingModel = environment.OPENAI_EMBEDDING_MODEL?.trim();
+  const lancedbDir = environment.RAG_LANCEDB_DIR?.trim() || 'data/lancedb';
+  const chunkSize = readPositiveInteger(environment, 'RAG_CHUNK_SIZE') ?? 1200;
+  const chunkOverlap = readPositiveInteger(environment, 'RAG_CHUNK_OVERLAP') ?? 200;
+  const embeddingDimensions = readPositiveInteger(environment, 'OPENAI_EMBEDDING_DIMENSIONS');
+
+  if (!apiKey) {
+    throw new ConfigurationError('環境変数 OPENAI_API_KEY を設定してください。');
+  }
+
+  if (!embeddingModel) {
+    throw new ConfigurationError('環境変数 OPENAI_EMBEDDING_MODEL を設定してください。');
+  }
+
+  if (chunkOverlap >= chunkSize) {
+    throw new ConfigurationError('RAG_CHUNK_OVERLAP は RAG_CHUNK_SIZE より小さくしてください。');
+  }
+
+  return {
+    apiKey,
+    embeddingModel,
+    embeddingDimensions,
+    lancedbDir,
+    chunkSize,
+    chunkOverlap,
+  };
 }
