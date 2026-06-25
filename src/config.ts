@@ -15,6 +15,7 @@ export interface RagConfig {
   lancedbDir: string;
   chunkSize: number;
   chunkOverlap: number;
+  topK: number;
 }
 
 export class ConfigurationError extends Error {
@@ -83,6 +84,7 @@ export function loadRagConfig(
   const lancedbDir = environment.RAG_LANCEDB_DIR?.trim() || 'data/lancedb';
   const chunkSize = readPositiveInteger(environment, 'RAG_CHUNK_SIZE') ?? 1200;
   const chunkOverlap = readPositiveInteger(environment, 'RAG_CHUNK_OVERLAP') ?? 200;
+  const topK = readPositiveInteger(environment, 'RAG_TOP_K') ?? 4;
   const embeddingDimensions = readPositiveInteger(environment, 'OPENAI_EMBEDDING_DIMENSIONS');
 
   if (!apiKey) {
@@ -104,5 +106,6 @@ export function loadRagConfig(
     lancedbDir,
     chunkSize,
     chunkOverlap,
+    topK,
   };
 }

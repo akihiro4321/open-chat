@@ -55,12 +55,13 @@ npm run chat -- --question "味噌汁の作り方を教えてください" --str
 
 ## RAG文書取込
 
-第7章では、ローカルのMarkdownまたはテキストファイルを取り込み、チャンク化、OpenAI Embeddings APIでの埋め込み生成、LanceDBへのベクトル保存、SQLiteへのメタデータ保存までを実装しています。まだチャット回答への検索結果注入は行いません。
+第7章では、ローカルのMarkdownまたはテキストファイルを取り込み、チャンク化、OpenAI Embeddings APIでの埋め込み生成、LanceDBへのベクトル保存、SQLiteへのメタデータ保存を行います。取込後のチャット回答では、質問を埋め込み化してLanceDBから関連チャンクを検索し、取得した文脈を不信頼な参考資料としてOpenAIへ渡します。
 
 取込対象の文書本文は、埋め込み生成のためOpenAI APIへ送信されます。API利用料が発生します。外部送信できない文書は取り込まないでください。
 
 ```bash
 export OPENAI_API_KEY="..."
+export OPENAI_MODEL="..."
 export OPENAI_EMBEDDING_MODEL="text-embedding-3-small"
 npm run db:migrate
 npm run rag:ingest -- --path "docs/requirement"
@@ -73,6 +74,8 @@ npm run rag:ingest -- --path "docs/requirement" --chunk-size 1200 --chunk-overla
 ```
 
 RAGのメタデータは `prisma/open-chat.db` に、ベクトル索引は既定で `data/lancedb/` に保存されます。取込が最後まで成功した場合だけ、SQLite上の有効索引が新しい取込へ切り替わります。
+
+チャット画面は常に現在有効なRAG索引を使います。有効な索引がない場合は、先に `npm run rag:ingest -- --path "取込対象パス"` を実行するようエラーを返します。検索件数は `RAG_TOP_K` で変更できます。
 
 APIキーは環境変数からのみ読み取り、画面表示やファイル保存は行いません。
 

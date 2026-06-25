@@ -12,6 +12,17 @@ const tokenUsageSchema = z.object({
   totalTokens: z.number().int().nonnegative(),
 });
 
+const ragSourceSchema = z.object({
+  chunkId: z.string(),
+  documentId: z.string(),
+  sourcePath: z.string(),
+  sourceName: z.string(),
+  sequence: z.number().int().nonnegative(),
+  startOffset: z.number().int().nonnegative(),
+  endOffset: z.number().int().nonnegative(),
+  score: z.number().nullable(),
+});
+
 export const chatStreamEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('delta'), delta: z.string() }),
   z.object({
@@ -22,6 +33,7 @@ export const chatStreamEventSchema = z.discriminatedUnion('type', [
     requestedModel: z.string(),
     fallbackUsed: z.boolean(),
     usage: tokenUsageSchema.nullable(),
+    sources: z.array(ragSourceSchema),
   }),
   z.object({ type: z.literal('error'), message: z.string() }),
 ]);

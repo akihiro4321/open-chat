@@ -58,3 +58,18 @@ export interface IngestDocumentsResult {
   chunkCount: number;
   lancedbUri: string;
 }
+
+export interface RagSourceReference {
+  chunkId: string;
+  documentId: string;
+  sourcePath: string;
+  sourceName: string;
+  sequence: number;
+  startOffset: number;
+  endOffset: number;
+  score: number | null;
+}
+
+export interface RetrievedRagChunk extends RagSourceReference {
+  text: string;
+}

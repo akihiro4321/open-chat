@@ -251,6 +251,39 @@ button:disabled {
   margin: 0.4rem 0 0;
 }
 
+.rag-sources {
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin: 0.5rem 0 0;
+}
+
+.rag-sources summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.rag-sources ol {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0.5rem 0 0;
+  padding-left: 1.2rem;
+}
+
+.rag-source-name,
+.rag-source-path,
+.rag-source-range {
+  display: block;
+}
+
+.rag-source-name {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.rag-source-path {
+  overflow-wrap: anywhere;
+}
+
 .error-message {
   background: #f8e5e2;
   border-radius: 0.6rem;

@@ -34,6 +34,18 @@ void test('ストリームイベントの種類ごとの形式を検証する', 
       requestedModel: 'test-model',
       fallbackUsed: false,
       usage: null,
+      sources: [
+        {
+          chunkId: 'chunk-1',
+          documentId: 'document-1',
+          sourcePath: 'docs/sample.md',
+          sourceName: 'sample.md',
+          sequence: 0,
+          startOffset: 0,
+          endOffset: 120,
+          score: 0.1,
+        },
+      ],
     }).success,
     true,
   );

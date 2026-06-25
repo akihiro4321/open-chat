@@ -4,6 +4,7 @@ import path from 'node:path';
 import { prisma } from '@/src/database.js';
 
 import { splitDocumentIntoChunks } from './chunker.js';
+import { ACTIVE_RAG_INDEX_ID } from './constants.js';
 import { createEmbeddings } from './embeddings.js';
 import { loadSourceDocuments } from './file-loader.js';
 import type {
@@ -13,8 +14,6 @@ import type {
   RagVectorRecord,
 } from './types.js';
 import { writeVectorTable } from './vector-store.js';
-
-const ACTIVE_RAG_INDEX_ID = 'active';
 
 function createTableName(ingestionRunId: string): string {
   return `rag_${ingestionRunId.replaceAll('-', '_')}`;

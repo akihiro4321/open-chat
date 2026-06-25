@@ -19,6 +19,7 @@ interface Message {
   content: string;
   status: 'streaming' | 'completed' | 'cancelled' | 'failed';
   modelRun?: RunDetails | null;
+  ragSources?: RagSource[];
 }
 
 interface RunDetails {
@@ -28,6 +29,17 @@ interface RunDetails {
   inputTokens?: number | null;
   outputTokens?: number | null;
   totalTokens?: number | null;
+}
+
+interface RagSource {
+  chunkId: string;
+  documentId: string;
+  sourcePath: string;
+  sourceName: string;
+  sequence: number;
+  startOffset: number;
+  endOffset: number;
+  score: number | null;
 }
 
 async function readApiError(response: Response): Promise<string> {
@@ -152,6 +164,7 @@ export default function ChatPage() {
       id: event.assistantMessageId,
       status: 'completed',
       modelRun,
+      ragSources: event.sources,
     });
     setThreads((current) => {
       const active = current.find((thread) => thread.id === activeThreadId);
@@ -360,6 +373,23 @@ export default function ChatPage() {
                 )}
                 {message.status === 'failed' && (
                   <p className="message-note">回答を完了できませんでした</p>
+                )}
+                {message.ragSources && message.ragSources.length > 0 && (
+                  <details className="rag-sources">
+                    <summary>参照文書 {message.ragSources.length}件</summary>
+                    <ol>
+                      {message.ragSources.map((source) => (
+                        <li key={source.chunkId}>
+                          <span className="rag-source-name">{source.sourceName}</span>
+                          <span className="rag-source-path">{source.sourcePath}</span>
+                          <span className="rag-source-range">
+                            チャンク {source.sequence + 1} / 位置 {source.startOffset}-
+                            {source.endOffset}
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  </details>
                 )}
               </article>
             ))
