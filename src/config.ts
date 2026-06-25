@@ -1,4 +1,4 @@
-import type { ChunkingStrategy } from '@/src/rag/index.js';
+import type { ChunkingStrategy, RetrievalMode } from '@/src/rag/index.js';
 
 export interface AppConfig {
   apiKey: string;
@@ -19,6 +19,7 @@ export interface RagConfig {
   chunkSize: number;
   chunkOverlap: number;
   topK: number;
+  retrievalMode: RetrievalMode;
 }
 
 export class ConfigurationError extends Error {
@@ -91,6 +92,18 @@ function readChunkingStrategy(environment: Record<string, string | undefined>): 
   return strategy;
 }
 
+function readRetrievalMode(environment: Record<string, string | undefined>): RetrievalMode {
+  const mode = environment.RAG_RETRIEVAL_MODE?.trim() || 'hybrid';
+
+  if (mode !== 'vector' && mode !== 'keyword' && mode !== 'hybrid') {
+    throw new ConfigurationError(
+      'RAG_RETRIEVAL_MODE は vector、keyword、hybrid のいずれかで指定してください。',
+    );
+  }
+
+  return mode;
+}
+
 export function loadRagConfig(
   environment: Record<string, string | undefined> = process.env,
 ): RagConfig {
@@ -101,6 +114,7 @@ export function loadRagConfig(
   const chunkSize = readPositiveInteger(environment, 'RAG_CHUNK_SIZE') ?? 1200;
   const chunkOverlap = readPositiveInteger(environment, 'RAG_CHUNK_OVERLAP') ?? 200;
   const topK = readPositiveInteger(environment, 'RAG_TOP_K') ?? 4;
+  const retrievalMode = readRetrievalMode(environment);
   const embeddingDimensions = readPositiveInteger(environment, 'OPENAI_EMBEDDING_DIMENSIONS');
 
   if (!apiKey) {
@@ -124,5 +138,6 @@ export function loadRagConfig(
     chunkSize,
     chunkOverlap,
     topK,
+    retrievalMode,
   };
 }

@@ -1,4 +1,5 @@
 export type ChunkingStrategy = 'fixed' | 'markdown';
+export type RetrievalMode = 'vector' | 'keyword' | 'hybrid';
 
 export interface SourceDocument {
   sourcePath: string;
@@ -72,6 +73,10 @@ export interface RagSourceReference {
   startOffset: number;
   endOffset: number;
   score: number | null;
+  keywordRank?: number | null;
+  keywordScore?: number | null;
+  vectorRank?: number | null;
+  vectorScore?: number | null;
 }
 
 export interface RetrievedRagChunk extends RagSourceReference {

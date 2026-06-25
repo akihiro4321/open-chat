@@ -86,3 +86,27 @@ void test('不明なRAGチャンク戦略を拒否する', () => {
       error instanceof ConfigurationError && error.message.includes('RAG_CHUNK_STRATEGY'),
   );
 });
+
+void test('RAG検索方式を読み込む', () => {
+  assert.equal(
+    loadRagConfig({
+      OPENAI_API_KEY: 'test-key',
+      OPENAI_EMBEDDING_MODEL: 'text-embedding-3-small',
+      RAG_RETRIEVAL_MODE: 'keyword',
+    }).retrievalMode,
+    'keyword',
+  );
+});
+
+void test('不明なRAG検索方式を拒否する', () => {
+  assert.throws(
+    () =>
+      loadRagConfig({
+        OPENAI_API_KEY: 'test-key',
+        OPENAI_EMBEDDING_MODEL: 'text-embedding-3-small',
+        RAG_RETRIEVAL_MODE: 'fulltext',
+      }),
+    (error: unknown) =>
+      error instanceof ConfigurationError && error.message.includes('RAG_RETRIEVAL_MODE'),
+  );
+});

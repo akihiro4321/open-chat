@@ -88,6 +88,10 @@ function toRagSourceReference(chunk: RagSourceReference): RagSourceReference {
     startOffset: chunk.startOffset,
     endOffset: chunk.endOffset,
     score: chunk.score,
+    keywordRank: chunk.keywordRank ?? null,
+    keywordScore: chunk.keywordScore ?? null,
+    vectorRank: chunk.vectorRank ?? null,
+    vectorScore: chunk.vectorScore ?? null,
   };
 }
 
@@ -99,6 +103,7 @@ async function prepareRagChatRequest(question: string): Promise<PreparedRagChatR
     embeddingDimensions: ragConfig.embeddingDimensions,
     lancedbDir: ragConfig.lancedbDir,
     question,
+    retrievalMode: ragConfig.retrievalMode,
     topK: ragConfig.topK,
   });
 

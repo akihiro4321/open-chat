@@ -77,6 +77,19 @@ RAGのメタデータは `prisma/open-chat.db` に、ベクトル索引は既定
 
 チャット画面は常に現在有効なRAG索引を使います。有効な索引がない場合は、先に `npm run rag:ingest -- --path "取込対象パス"` を実行するようエラーを返します。検索件数は `RAG_TOP_K` で変更できます。
 
+検索方式は `RAG_RETRIEVAL_MODE` で切り替えられます。`vector` はベクトル検索のみ、`keyword` はキーワード検索のみ、`hybrid` は両方の結果をRRFで順位統合します。
+
+```bash
+export RAG_RETRIEVAL_MODE=hybrid
+```
+
+検索結果だけを確認したい場合は、チャット回答を生成せずにRAG検索を実行できます。検索方式や件数はコマンド引数で一時的に上書きできます。
+
+```bash
+npm run rag:search -- --question "Open ChatのRAG構成は？"
+npm run rag:search -- --question "Open ChatのRAG構成は？" --retrieval-mode keyword --top-k 8
+```
+
 APIキーは環境変数からのみ読み取り、画面表示やファイル保存は行いません。
 
 回答は生成された部分から順に表示されます。生成中に `Ctrl+C` を押すとOpenAI APIへのリクエストを中断し、表示済みの内容を部分回答として残します。

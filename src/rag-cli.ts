@@ -2,14 +2,29 @@ import 'dotenv/config';
 
 import { ConfigurationError, loadRagConfig } from '@/src/config.js';
 import { ApplicationError } from '@/src/errors.js';
-import { type ChunkingStrategy, ingestDocuments } from '@/src/rag/index.js';
+import {
+  type ChunkingStrategy,
+  ingestDocuments,
+  type RetrievalMode,
+  retrieveRagContext,
+} from '@/src/rag/index.js';
 
-interface RagCliOptions {
+interface IngestOptions {
+  command: 'ingest';
   path: string;
   chunkStrategy?: ChunkingStrategy;
   chunkSize?: number;
   chunkOverlap?: number;
 }
+
+interface SearchOptions {
+  command: 'search';
+  question: string;
+  retrievalMode?: RetrievalMode;
+  topK?: number;
+}
+
+type RagCliOptions = IngestOptions | SearchOptions;
 
 class InputError extends Error {
   constructor(message: string) {
@@ -21,11 +36,17 @@ class InputError extends Error {
 function printUsage(): void {
   console.log(`使い方:
   npm run rag:ingest -- --path "取込対象のファイルまたはディレクトリ"
+  npm run rag:search -- --question "検索したい質問"
 
-オプション:
+取込オプション:
   --chunk-strategy  チャンク戦略。fixed または markdown。未指定なら RAG_CHUNK_STRATEGY または fixed
   --chunk-size      チャンク文字数。未指定なら RAG_CHUNK_SIZE または 1200
   --chunk-overlap   チャンクの重なり文字数。未指定なら RAG_CHUNK_OVERLAP または 200
+
+検索オプション:
+  --question        検索したい質問
+  --retrieval-mode  検索方式。vector、keyword、hybrid。未指定なら RAG_RETRIEVAL_MODE または hybrid
+  --top-k           検索件数。未指定なら RAG_TOP_K または 4
 
 必要な環境変数:
   OPENAI_API_KEY          OpenAI APIキー
@@ -36,7 +57,9 @@ function printUsage(): void {
   RAG_LANCEDB_DIR              LanceDB保存先
   RAG_CHUNK_STRATEGY           既定チャンク戦略。fixed または markdown
   RAG_CHUNK_SIZE               既定チャンク文字数
-  RAG_CHUNK_OVERLAP            既定オーバーラップ文字数`);
+  RAG_CHUNK_OVERLAP            既定オーバーラップ文字数
+  RAG_TOP_K                    既定検索件数
+  RAG_RETRIEVAL_MODE           既定検索方式。vector、keyword、hybrid`);
 }
 
 function readOptionValue(args: string[], index: number, name: string): string {
@@ -67,7 +90,15 @@ function readChunkingStrategyValue(value: string, name: string): ChunkingStrateg
   return value;
 }
 
-function parseArguments(args: string[]): RagCliOptions | null {
+function readRetrievalModeValue(value: string, name: string): RetrievalMode {
+  if (value !== 'vector' && value !== 'keyword' && value !== 'hybrid') {
+    throw new InputError(`${name} は vector、keyword、hybrid のいずれかで指定してください。`);
+  }
+
+  return value;
+}
+
+function parseIngestArguments(args: string[]): IngestOptions {
   let sourcePath: string | undefined;
   let chunkStrategy: ChunkingStrategy | undefined;
   let chunkSize: number | undefined;
@@ -75,10 +106,6 @@ function parseArguments(args: string[]): RagCliOptions | null {
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
-
-    if (argument === '--help' || argument === '-h') {
-      return null;
-    }
 
     if (argument === '--path') {
       sourcePath = readOptionValue(args, index, '--path');
@@ -118,6 +145,7 @@ function parseArguments(args: string[]): RagCliOptions | null {
   }
 
   return {
+    command: 'ingest',
     path: sourcePath,
     ...(chunkStrategy ? { chunkStrategy } : {}),
     ...(chunkSize ? { chunkSize } : {}),
@@ -125,14 +153,66 @@ function parseArguments(args: string[]): RagCliOptions | null {
   };
 }
 
-async function main(): Promise<void> {
-  const options = parseArguments(process.argv.slice(2));
+function parseSearchArguments(args: string[]): SearchOptions {
+  let question: string | undefined;
+  let retrievalMode: RetrievalMode | undefined;
+  let topK: number | undefined;
 
-  if (!options) {
-    printUsage();
-    return;
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+
+    if (argument === '--question' || argument === '-q') {
+      question = readOptionValue(args, index, '--question');
+      index += 1;
+      continue;
+    }
+
+    if (argument === '--retrieval-mode') {
+      retrievalMode = readRetrievalModeValue(readOptionValue(args, index, argument), argument);
+      index += 1;
+      continue;
+    }
+
+    if (argument === '--top-k') {
+      topK = readPositiveIntegerValue(readOptionValue(args, index, argument), argument);
+      index += 1;
+      continue;
+    }
+
+    throw new InputError(`不明な引数です: ${argument ?? ''}`);
   }
 
+  if (!question) {
+    throw new InputError('--question は必須です。');
+  }
+
+  return {
+    command: 'search',
+    question,
+    ...(retrievalMode ? { retrievalMode } : {}),
+    ...(topK ? { topK } : {}),
+  };
+}
+
+function parseArguments(args: string[]): RagCliOptions | null {
+  if (args.includes('--help') || args.includes('-h')) {
+    return null;
+  }
+
+  const [command, ...rest] = args;
+
+  if (command === 'search') {
+    return parseSearchArguments(rest);
+  }
+
+  if (command === 'ingest') {
+    return parseIngestArguments(rest);
+  }
+
+  return parseIngestArguments(args);
+}
+
+async function runIngest(options: IngestOptions): Promise<void> {
   const config = loadRagConfig();
   const chunkStrategy = options.chunkStrategy ?? config.chunkStrategy;
   const chunkSize = options.chunkSize ?? config.chunkSize;
@@ -162,6 +242,56 @@ async function main(): Promise<void> {
   console.log(`テーブル: ${result.tableName}`);
 }
 
+function toPreview(text: string): string {
+  return text.replaceAll(/\s+/g, ' ').trim().slice(0, 160);
+}
+
+async function runSearch(options: SearchOptions): Promise<void> {
+  const config = loadRagConfig();
+  const retrievalMode = options.retrievalMode ?? config.retrievalMode;
+  const topK = options.topK ?? config.topK;
+  const chunks = await retrieveRagContext({
+    apiKey: config.apiKey,
+    embeddingModel: config.embeddingModel,
+    embeddingDimensions: config.embeddingDimensions,
+    lancedbDir: config.lancedbDir,
+    question: options.question,
+    retrievalMode,
+    topK,
+  });
+
+  console.log(`検索方式: ${retrievalMode}`);
+  console.log(`検索件数: ${chunks.length}`);
+
+  chunks.forEach((chunk, index) => {
+    console.log('');
+    console.log(`[${index + 1}] ${chunk.sourceName}`);
+    console.log(`path: ${chunk.sourcePath}`);
+    console.log(`range: ${chunk.startOffset}-${chunk.endOffset}`);
+    console.log(`score: ${chunk.score ?? '-'}`);
+    console.log(
+      `vectorRank: ${chunk.vectorRank ?? '-'} / keywordRank: ${chunk.keywordRank ?? '-'}`,
+    );
+    console.log(`preview: ${toPreview(chunk.text)}`);
+  });
+}
+
+async function main(): Promise<void> {
+  const options = parseArguments(process.argv.slice(2));
+
+  if (!options) {
+    printUsage();
+    return;
+  }
+
+  if (options.command === 'search') {
+    await runSearch(options);
+    return;
+  }
+
+  await runIngest(options);
+}
+
 main().catch((error: unknown) => {
   if (
     error instanceof InputError ||
@@ -170,7 +300,7 @@ main().catch((error: unknown) => {
   ) {
     console.error(`エラー: ${error.message}`);
   } else {
-    console.error('エラー: RAG文書取込に失敗しました。');
+    console.error('エラー: RAG CLIの実行に失敗しました。');
     console.error(error instanceof Error ? error.message : error);
   }
 

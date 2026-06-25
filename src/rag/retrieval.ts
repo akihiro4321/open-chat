@@ -5,11 +5,14 @@ import { ApplicationError } from '@/src/errors.js';
 
 import { ACTIVE_RAG_INDEX_ID } from './constants.js';
 import { createEmbeddings, type EmbeddingConfig } from './embeddings.js';
-import type { RetrievedRagChunk } from './types.js';
+import { searchKeywordChunks } from './keyword-search.js';
+import { fuseRetrievedChunks } from './rank-fusion.js';
+import type { RetrievalMode, RetrievedRagChunk } from './types.js';
 
 export interface RetrieveRagContextInput extends EmbeddingConfig {
   lancedbDir: string;
   question: string;
+  retrievalMode: RetrievalMode;
   topK: number;
 }
 
@@ -41,7 +44,9 @@ function assertNumber(value: unknown, fieldName: string): number {
   return value;
 }
 
-function toRetrievedChunk(row: LanceDbSearchRow): RetrievedRagChunk {
+function toRetrievedChunk(row: LanceDbSearchRow, rank: number): RetrievedRagChunk {
+  const score = typeof row._distance === 'number' ? row._distance : null;
+
   return {
     chunkId: assertString(row.chunkId, 'chunkId'),
     documentId: assertString(row.documentId, 'documentId'),
@@ -51,13 +56,13 @@ function toRetrievedChunk(row: LanceDbSearchRow): RetrievedRagChunk {
     startOffset: assertNumber(row.startOffset, 'startOffset'),
     endOffset: assertNumber(row.endOffset, 'endOffset'),
     text: assertString(row.text, 'text'),
-    score: typeof row._distance === 'number' ? row._distance : null,
+    score,
+    vectorRank: rank,
+    vectorScore: score,
   };
 }
 
-export async function retrieveRagContext(
-  input: RetrieveRagContextInput,
-): Promise<RetrievedRagChunk[]> {
+async function findActiveIngestionRun() {
   const activeIndex = await prisma.activeRagIndex.findUnique({
     where: { id: ACTIVE_RAG_INDEX_ID },
     include: { ingestionRun: true },
@@ -70,17 +75,27 @@ export async function retrieveRagContext(
     );
   }
 
-  const [queryVector] = await createEmbeddings(input, [input.question]);
+  return activeIndex.ingestionRun;
+}
+
+async function retrieveVectorChunks(input: {
+  embeddingConfig: EmbeddingConfig;
+  lancedbDir: string;
+  limit: number;
+  question: string;
+  tableName: string;
+}): Promise<RetrievedRagChunk[]> {
+  const [queryVector] = await createEmbeddings(input.embeddingConfig, [input.question]);
 
   if (!queryVector) {
     throw new ApplicationError('invalid_response', '質問の埋め込みを作成できませんでした。');
   }
 
   const database = await lancedb.connect(input.lancedbDir);
-  const table = await database.openTable(activeIndex.ingestionRun.tableName);
+  const table = await database.openTable(input.tableName);
   const rows = (await table
     .vectorSearch(queryVector)
-    .limit(input.topK)
+    .limit(input.limit)
     .select([
       'chunkId',
       'documentId',
@@ -94,5 +109,65 @@ export async function retrieveRagContext(
     ])
     .toArray()) as LanceDbSearchRow[];
 
-  return rows.map(toRetrievedChunk);
+  return rows.map((row, index) => toRetrievedChunk(row, index + 1));
+}
+
+async function retrieveKeywordChunks(input: {
+  ingestionRunId: string;
+  limit: number;
+  question: string;
+}): Promise<RetrievedRagChunk[]> {
+  const chunks = await prisma.ragChunk.findMany({
+    where: { ingestionRunId: input.ingestionRunId },
+    include: { document: true },
+    orderBy: [{ documentId: 'asc' }, { sequence: 'asc' }],
+  });
+
+  return searchKeywordChunks({
+    chunks,
+    limit: input.limit,
+    question: input.question,
+  }).map((chunk, index) => ({
+    ...chunk,
+    keywordRank: index + 1,
+  }));
+}
+
+export async function retrieveRagContext(
+  input: RetrieveRagContextInput,
+): Promise<RetrievedRagChunk[]> {
+  const ingestionRun = await findActiveIngestionRun();
+  const candidateLimit = input.retrievalMode === 'hybrid' ? input.topK * 2 : input.topK;
+
+  if (input.retrievalMode === 'keyword') {
+    return retrieveKeywordChunks({
+      ingestionRunId: ingestionRun.id,
+      limit: input.topK,
+      question: input.question,
+    });
+  }
+
+  const vectorChunks = await retrieveVectorChunks({
+    embeddingConfig: input,
+    lancedbDir: input.lancedbDir,
+    limit: candidateLimit,
+    question: input.question,
+    tableName: ingestionRun.tableName,
+  });
+
+  if (input.retrievalMode === 'vector') {
+    return vectorChunks.slice(0, input.topK);
+  }
+
+  const keywordChunks = await retrieveKeywordChunks({
+    ingestionRunId: ingestionRun.id,
+    limit: candidateLimit,
+    question: input.question,
+  });
+
+  return fuseRetrievedChunks({
+    keywordChunks,
+    limit: input.topK,
+    vectorChunks,
+  });
 }
