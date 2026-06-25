@@ -1,3 +1,5 @@
+import type { ChunkingStrategy } from '@/src/rag/index.js';
+
 export interface AppConfig {
   apiKey: string;
   model: string;
@@ -13,6 +15,7 @@ export interface RagConfig {
   embeddingModel: string;
   embeddingDimensions: number | null;
   lancedbDir: string;
+  chunkStrategy: ChunkingStrategy;
   chunkSize: number;
   chunkOverlap: number;
   topK: number;
@@ -76,12 +79,25 @@ function readPositiveInteger(
   return value;
 }
 
+function readChunkingStrategy(environment: Record<string, string | undefined>): ChunkingStrategy {
+  const strategy = environment.RAG_CHUNK_STRATEGY?.trim() || 'fixed';
+
+  if (strategy !== 'fixed' && strategy !== 'markdown') {
+    throw new ConfigurationError(
+      'RAG_CHUNK_STRATEGY は fixed または markdown で指定してください。',
+    );
+  }
+
+  return strategy;
+}
+
 export function loadRagConfig(
   environment: Record<string, string | undefined> = process.env,
 ): RagConfig {
   const apiKey = environment.OPENAI_API_KEY?.trim();
   const embeddingModel = environment.OPENAI_EMBEDDING_MODEL?.trim();
   const lancedbDir = environment.RAG_LANCEDB_DIR?.trim() || 'data/lancedb';
+  const chunkStrategy = readChunkingStrategy(environment);
   const chunkSize = readPositiveInteger(environment, 'RAG_CHUNK_SIZE') ?? 1200;
   const chunkOverlap = readPositiveInteger(environment, 'RAG_CHUNK_OVERLAP') ?? 200;
   const topK = readPositiveInteger(environment, 'RAG_TOP_K') ?? 4;
@@ -104,6 +120,7 @@ export function loadRagConfig(
     embeddingModel,
     embeddingDimensions,
     lancedbDir,
+    chunkStrategy,
     chunkSize,
     chunkOverlap,
     topK,

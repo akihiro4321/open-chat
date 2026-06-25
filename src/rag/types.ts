@@ -1,3 +1,5 @@
+export type ChunkingStrategy = 'fixed' | 'markdown';
+
 export interface SourceDocument {
   sourcePath: string;
   sourceName: string;
@@ -6,6 +8,7 @@ export interface SourceDocument {
 }
 
 export interface ChunkingOptions {
+  chunkStrategy: ChunkingStrategy;
   chunkSize: number;
   chunkOverlap: number;
 }
@@ -44,6 +47,7 @@ export interface RagVectorRecord {
 export interface IngestDocumentsInput {
   apiKey: string;
   sourcePath: string;
+  chunkStrategy: ChunkingStrategy;
   chunkSize: number;
   chunkOverlap: number;
   embeddingModel: string;

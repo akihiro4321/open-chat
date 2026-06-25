@@ -67,13 +67,13 @@ npm run db:migrate
 npm run rag:ingest -- --path "docs/requirement"
 ```
 
-任意でチャンクサイズとオーバーラップを指定できます。
+任意でチャンク戦略、チャンクサイズ、オーバーラップを指定できます。`fixed` は文字数で固定分割し、`markdown` はMarkdown見出しを優先して分割します。
 
 ```bash
-npm run rag:ingest -- --path "docs/requirement" --chunk-size 1200 --chunk-overlap 200
+npm run rag:ingest -- --path "docs/requirement" --chunk-strategy markdown --chunk-size 1200 --chunk-overlap 200
 ```
 
-RAGのメタデータは `prisma/open-chat.db` に、ベクトル索引は既定で `data/lancedb/` に保存されます。取込が最後まで成功した場合だけ、SQLite上の有効索引が新しい取込へ切り替わります。
+RAGのメタデータは `prisma/open-chat.db` に、ベクトル索引は既定で `data/lancedb/` に保存されます。取込が最後まで成功した場合だけ、SQLite上の有効索引が新しい取込へ切り替わります。取込履歴にはチャンク戦略、サイズ、オーバーラップも保存されます。
 
 チャット画面は常に現在有効なRAG索引を使います。有効な索引がない場合は、先に `npm run rag:ingest -- --path "取込対象パス"` を実行するようエラーを返します。検索件数は `RAG_TOP_K` で変更できます。
 

@@ -50,6 +50,7 @@ model RagIngestionRun {
   sourcePath          String
   documentCount       Int             @default(0)
   chunkCount          Int             @default(0)
+  chunkStrategy       String          @default("fixed")
   chunkSize           Int
   chunkOverlap        Int
   embeddingModel      String

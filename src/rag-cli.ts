@@ -2,10 +2,11 @@ import 'dotenv/config';
 
 import { ConfigurationError, loadRagConfig } from '@/src/config.js';
 import { ApplicationError } from '@/src/errors.js';
-import { ingestDocuments } from '@/src/rag/index.js';
+import { type ChunkingStrategy, ingestDocuments } from '@/src/rag/index.js';
 
 interface RagCliOptions {
   path: string;
+  chunkStrategy?: ChunkingStrategy;
   chunkSize?: number;
   chunkOverlap?: number;
 }
@@ -22,6 +23,7 @@ function printUsage(): void {
   npm run rag:ingest -- --path "取込対象のファイルまたはディレクトリ"
 
 オプション:
+  --chunk-strategy  チャンク戦略。fixed または markdown。未指定なら RAG_CHUNK_STRATEGY または fixed
   --chunk-size      チャンク文字数。未指定なら RAG_CHUNK_SIZE または 1200
   --chunk-overlap   チャンクの重なり文字数。未指定なら RAG_CHUNK_OVERLAP または 200
 
@@ -32,6 +34,7 @@ function printUsage(): void {
 任意の環境変数:
   OPENAI_EMBEDDING_DIMENSIONS  埋め込み次元数
   RAG_LANCEDB_DIR              LanceDB保存先
+  RAG_CHUNK_STRATEGY           既定チャンク戦略。fixed または markdown
   RAG_CHUNK_SIZE               既定チャンク文字数
   RAG_CHUNK_OVERLAP            既定オーバーラップ文字数`);
 }
@@ -56,8 +59,17 @@ function readPositiveIntegerValue(value: string, name: string): number {
   return numberValue;
 }
 
+function readChunkingStrategyValue(value: string, name: string): ChunkingStrategy {
+  if (value !== 'fixed' && value !== 'markdown') {
+    throw new InputError(`${name} は fixed または markdown で指定してください。`);
+  }
+
+  return value;
+}
+
 function parseArguments(args: string[]): RagCliOptions | null {
   let sourcePath: string | undefined;
+  let chunkStrategy: ChunkingStrategy | undefined;
   let chunkSize: number | undefined;
   let chunkOverlap: number | undefined;
 
@@ -70,6 +82,15 @@ function parseArguments(args: string[]): RagCliOptions | null {
 
     if (argument === '--path') {
       sourcePath = readOptionValue(args, index, '--path');
+      index += 1;
+      continue;
+    }
+
+    if (argument === '--chunk-strategy') {
+      chunkStrategy = readChunkingStrategyValue(
+        readOptionValue(args, index, '--chunk-strategy'),
+        argument,
+      );
       index += 1;
       continue;
     }
@@ -98,6 +119,7 @@ function parseArguments(args: string[]): RagCliOptions | null {
 
   return {
     path: sourcePath,
+    ...(chunkStrategy ? { chunkStrategy } : {}),
     ...(chunkSize ? { chunkSize } : {}),
     ...(chunkOverlap ? { chunkOverlap } : {}),
   };
@@ -112,6 +134,7 @@ async function main(): Promise<void> {
   }
 
   const config = loadRagConfig();
+  const chunkStrategy = options.chunkStrategy ?? config.chunkStrategy;
   const chunkSize = options.chunkSize ?? config.chunkSize;
   const chunkOverlap = options.chunkOverlap ?? config.chunkOverlap;
 
@@ -121,6 +144,7 @@ async function main(): Promise<void> {
 
   const result = await ingestDocuments({
     sourcePath: options.path,
+    chunkStrategy,
     chunkSize,
     chunkOverlap,
     embeddingModel: config.embeddingModel,
@@ -131,6 +155,7 @@ async function main(): Promise<void> {
 
   console.log('RAG文書取込が完了しました。');
   console.log(`取込ID: ${result.ingestionRunId}`);
+  console.log(`チャンク戦略: ${chunkStrategy}`);
   console.log(`文書数: ${result.documentCount}`);
   console.log(`チャンク数: ${result.chunkCount}`);
   console.log(`LanceDB: ${result.lancedbUri}`);

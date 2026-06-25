@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { ConfigurationError, loadConfig } from '../src/config.js';
+import { ConfigurationError, loadConfig, loadRagConfig } from '../src/config.js';
 
 void test('APIキーとモデル名の前後空白を除いて読み込む', () => {
   assert.deepEqual(
@@ -60,5 +60,29 @@ void test('モデル名が未設定なら設定エラーにする', () => {
     () => loadConfig({ OPENAI_API_KEY: 'test-key' }),
     (error: unknown) =>
       error instanceof ConfigurationError && error.message.includes('OPENAI_MODEL'),
+  );
+});
+
+void test('RAGチャンク戦略を読み込む', () => {
+  assert.equal(
+    loadRagConfig({
+      OPENAI_API_KEY: 'test-key',
+      OPENAI_EMBEDDING_MODEL: 'text-embedding-3-small',
+      RAG_CHUNK_STRATEGY: 'markdown',
+    }).chunkStrategy,
+    'markdown',
+  );
+});
+
+void test('不明なRAGチャンク戦略を拒否する', () => {
+  assert.throws(
+    () =>
+      loadRagConfig({
+        OPENAI_API_KEY: 'test-key',
+        OPENAI_EMBEDDING_MODEL: 'text-embedding-3-small',
+        RAG_CHUNK_STRATEGY: 'semantic',
+      }),
+    (error: unknown) =>
+      error instanceof ConfigurationError && error.message.includes('RAG_CHUNK_STRATEGY'),
   );
 });

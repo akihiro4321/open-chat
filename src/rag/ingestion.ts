@@ -53,6 +53,7 @@ export async function ingestDocuments(input: IngestDocumentsInput): Promise<Inge
       id: ingestionRunId,
       status: 'running',
       sourcePath: resolvedSourcePath,
+      chunkStrategy: input.chunkStrategy,
       chunkSize: input.chunkSize,
       chunkOverlap: input.chunkOverlap,
       embeddingModel: input.embeddingModel,
@@ -76,6 +77,7 @@ export async function ingestDocuments(input: IngestDocumentsInput): Promise<Inge
         ...document,
         id: documentId,
         chunks: splitDocumentIntoChunks(document, documentId, ingestionRunId, {
+          chunkStrategy: input.chunkStrategy,
           chunkSize: input.chunkSize,
           chunkOverlap: input.chunkOverlap,
         }),
