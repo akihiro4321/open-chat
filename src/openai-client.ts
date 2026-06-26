@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { zodTextFormat } from 'openai/helpers/zod';
+import type { ResponseInputItem } from 'openai/resources/responses/responses';
 import { ZodError } from 'zod';
 
 import type { AppConfig } from './config.js';
@@ -12,6 +13,31 @@ const REQUEST_TIMEOUT_MS = 30_000;
 const MAX_RETRIES = 2;
 const INITIAL_RETRY_DELAY_MS = 500;
 const MAX_RETRY_DELAY_MS = 4_000;
+
+export interface StreamToolCall {
+  callId: string;
+  name: string;
+  arguments: string;
+}
+
+export interface StreamWithToolsOptions {
+  onTextDelta: (delta: string) => void;
+  signal?: AbortSignal;
+}
+
+export interface StreamWithToolsRequest {
+  instruction: string;
+  input: string | ConversationMessage[] | ResponseInputItem[];
+  tools: ReadonlyArray<OpenAI.Responses.Tool>;
+  parallelToolCalls?: boolean;
+}
+
+export interface StreamWithToolsResult {
+  answer: string;
+  model: string;
+  usage: TokenUsage | null;
+  toolCalls: StreamToolCall[];
+}
 
 export interface ChatRequest {
   instruction: string;
@@ -325,4 +351,158 @@ export async function requestAnswerStreamWithFallback(
     );
     return { ...result, fallbackUsed: true, requestedModel: config.model };
   }
+}
+
+function toResponseInput(input: StreamWithToolsRequest['input']): string | ResponseInputItem[] {
+  if (typeof input === 'string' || Array.isArray(input)) {
+    return input;
+  }
+
+  throw new ApplicationError('invalid_request', 'エージェント入力の形式が不正です。');
+}
+
+function isResponseFunctionToolCall(
+  item: OpenAI.Responses.ResponseOutputItem,
+): item is OpenAI.Responses.ResponseFunctionToolCall {
+  return item.type === 'function_call';
+}
+
+export async function requestAnswerStreamWithTools(
+  config: AppConfig,
+  request: StreamWithToolsRequest,
+  options: StreamWithToolsOptions,
+): Promise<StreamWithToolsResult> {
+  const client = createClient(config);
+
+  return withRetry(
+    async () => {
+      let answer = '';
+      let completedModel: string | null = null;
+      let completedUsage: TokenUsage | null = null;
+      const toolCallArguments = new Map<string, string>();
+      const toolCallNames = new Map<string, string>();
+
+      try {
+        const stream = await client.responses.create(
+          {
+            model: config.model,
+            instructions: request.instruction,
+            input: toResponseInput(request.input),
+            tools: [...request.tools],
+            parallel_tool_calls: request.parallelToolCalls ?? true,
+            stream: true,
+          },
+          { signal: options.signal },
+        );
+
+        for await (const event of stream) {
+          if (event.type === 'response.output_text.delta') {
+            answer += event.delta;
+            options.onTextDelta(event.delta);
+            continue;
+          }
+
+          if (event.type === 'response.function_call_arguments.delta') {
+            const existing = toolCallArguments.get(event.item_id) ?? '';
+            toolCallArguments.set(event.item_id, existing + event.delta);
+            continue;
+          }
+
+          if (event.type === 'response.function_call_arguments.done') {
+            toolCallArguments.set(event.item_id, event.arguments);
+            toolCallNames.set(event.item_id, event.name);
+            continue;
+          }
+
+          if (event.type === 'response.output_item.added') {
+            const item = event.item;
+
+            if (item.type === 'function_call') {
+              toolCallNames.set(item.call_id, item.name);
+
+              if (item.arguments) {
+                toolCallArguments.set(item.call_id, item.arguments);
+              }
+            }
+            continue;
+          }
+
+          if (event.type === 'response.completed') {
+            for (const item of event.response.output) {
+              if (!isResponseFunctionToolCall(item)) {
+                continue;
+              }
+
+              toolCallNames.set(item.call_id, item.name);
+
+              if (!toolCallArguments.has(item.call_id)) {
+                toolCallArguments.set(item.call_id, item.arguments);
+              }
+            }
+
+            completedModel = event.response.model;
+            completedUsage = toTokenUsage(event.response.usage);
+            continue;
+          }
+
+          if (event.type === 'response.failed') {
+            throw new ApplicationError(
+              'service_unavailable',
+              'OpenAI APIで回答生成に失敗しました。',
+              { retryable: answer.length === 0 },
+            );
+          }
+
+          if (event.type === 'response.incomplete') {
+            throw new ApplicationError(
+              'invalid_response',
+              'OpenAIからの回答生成が完了しませんでした。',
+            );
+          }
+
+          if (event.type === 'error') {
+            throw new ApplicationError('unknown', 'OpenAI APIで回答生成に失敗しました。');
+          }
+        }
+
+        const toolCalls: StreamToolCall[] = [];
+
+        for (const [itemId, argumentsJson] of toolCallArguments) {
+          const name = toolCallNames.get(itemId);
+
+          if (!name) {
+            continue;
+          }
+
+          toolCalls.push({ callId: itemId, name, arguments: argumentsJson });
+        }
+
+        return {
+          answer: answer.trim(),
+          model: completedModel ?? config.model,
+          usage: completedUsage,
+          toolCalls,
+        };
+      } catch (error: unknown) {
+        if (options.signal?.aborted) {
+          throw new GenerationCancelledError();
+        }
+
+        const applicationError = classifyOpenAIError(error);
+
+        if (answer.length > 0 && applicationError.retryable) {
+          throw new ApplicationError(applicationError.category, applicationError.message, {
+            cause: applicationError,
+          });
+        }
+
+        throw applicationError;
+      }
+    },
+    {
+      maxRetries: MAX_RETRIES,
+      initialDelayMs: INITIAL_RETRY_DELAY_MS,
+      maxDelayMs: MAX_RETRY_DELAY_MS,
+    },
+  );
 }

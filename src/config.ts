@@ -104,6 +104,14 @@ function readRetrievalMode(environment: Record<string, string | undefined>): Ret
   return mode;
 }
 
+export function loadAgentConfig(environment: Record<string, string | undefined> = process.env): {
+  maxIterations: number;
+} {
+  const maxIterations = readPositiveInteger(environment, 'AGENT_MAX_ITERATIONS') ?? 5;
+
+  return { maxIterations };
+}
+
 export function loadRagConfig(
   environment: Record<string, string | undefined> = process.env,
 ): RagConfig {
