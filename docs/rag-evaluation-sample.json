@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "id": "open-chat-rag-overview",
+      "question": "Open ChatのRAG構成は？",
+      "expectedChunkIds": ["chunk-idをrag:searchの結果から置き換える"],
+      "expectedDocumentIds": []
+    },
+    {
+      "id": "open-chat-retrieval-mode",
+      "question": "RAGの検索方式は何がありますか？",
+      "expectedChunkIds": [],
+      "expectedDocumentIds": ["document-idをrag:searchの結果から置き換える"]
+    }
+  ]
+}

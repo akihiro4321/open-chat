@@ -9,6 +9,7 @@
     "start": "next start",
     "chat": "tsx src/cli.ts",
     "rag:ingest": "tsx src/rag-cli.ts",
+    "rag:evaluate": "tsx src/rag-cli.ts evaluate",
     "rag:search": "tsx src/rag-cli.ts search",
     "test": "tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",

@@ -4,7 +4,10 @@ import { ConfigurationError, loadRagConfig } from '@/src/config.js';
 import { ApplicationError } from '@/src/errors.js';
 import {
   type ChunkingStrategy,
+  evaluateRagDataset,
   ingestDocuments,
+  loadRagEvaluationDataset,
+  type RagEvaluationResult,
   type RetrievalMode,
   retrieveRagContext,
 } from '@/src/rag/index.js';
@@ -24,7 +27,16 @@ interface SearchOptions {
   topK?: number;
 }
 
-type RagCliOptions = IngestOptions | SearchOptions;
+type EvaluationRetrievalMode = RetrievalMode | 'all';
+
+interface EvaluateOptions {
+  command: 'evaluate';
+  datasetPath: string;
+  retrievalMode?: EvaluationRetrievalMode;
+  topK?: number;
+}
+
+type RagCliOptions = EvaluateOptions | IngestOptions | SearchOptions;
 
 class InputError extends Error {
   constructor(message: string) {
@@ -37,6 +49,7 @@ function printUsage(): void {
   console.log(`使い方:
   npm run rag:ingest -- --path "取込対象のファイルまたはディレクトリ"
   npm run rag:search -- --question "検索したい質問"
+  npm run rag:evaluate -- --dataset "評価データJSON"
 
 取込オプション:
   --chunk-strategy  チャンク戦略。fixed または markdown。未指定なら RAG_CHUNK_STRATEGY または fixed
@@ -46,6 +59,11 @@ function printUsage(): void {
 検索オプション:
   --question        検索したい質問
   --retrieval-mode  検索方式。vector、keyword、hybrid。未指定なら RAG_RETRIEVAL_MODE または hybrid
+  --top-k           検索件数。未指定なら RAG_TOP_K または 4
+
+評価オプション:
+  --dataset         評価データJSONのパス
+  --retrieval-mode  検索方式。vector、keyword、hybrid、all。未指定なら RAG_RETRIEVAL_MODE または hybrid
   --top-k           検索件数。未指定なら RAG_TOP_K または 4
 
 必要な環境変数:
@@ -96,6 +114,14 @@ function readRetrievalModeValue(value: string, name: string): RetrievalMode {
   }
 
   return value;
+}
+
+function readEvaluationRetrievalModeValue(value: string, name: string): EvaluationRetrievalMode {
+  if (value === 'all') {
+    return value;
+  }
+
+  return readRetrievalModeValue(value, name);
 }
 
 function parseIngestArguments(args: string[]): IngestOptions {
@@ -194,6 +220,50 @@ function parseSearchArguments(args: string[]): SearchOptions {
   };
 }
 
+function parseEvaluateArguments(args: string[]): EvaluateOptions {
+  let datasetPath: string | undefined;
+  let retrievalMode: EvaluationRetrievalMode | undefined;
+  let topK: number | undefined;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+
+    if (argument === '--dataset') {
+      datasetPath = readOptionValue(args, index, argument);
+      index += 1;
+      continue;
+    }
+
+    if (argument === '--retrieval-mode') {
+      retrievalMode = readEvaluationRetrievalModeValue(
+        readOptionValue(args, index, argument),
+        argument,
+      );
+      index += 1;
+      continue;
+    }
+
+    if (argument === '--top-k') {
+      topK = readPositiveIntegerValue(readOptionValue(args, index, argument), argument);
+      index += 1;
+      continue;
+    }
+
+    throw new InputError(`不明な引数です: ${argument ?? ''}`);
+  }
+
+  if (!datasetPath) {
+    throw new InputError('--dataset は必須です。');
+  }
+
+  return {
+    command: 'evaluate',
+    datasetPath,
+    ...(retrievalMode ? { retrievalMode } : {}),
+    ...(topK ? { topK } : {}),
+  };
+}
+
 function parseArguments(args: string[]): RagCliOptions | null {
   if (args.includes('--help') || args.includes('-h')) {
     return null;
@@ -207,6 +277,10 @@ function parseArguments(args: string[]): RagCliOptions | null {
 
   if (command === 'ingest') {
     return parseIngestArguments(rest);
+  }
+
+  if (command === 'evaluate') {
+    return parseEvaluateArguments(rest);
   }
 
   return parseIngestArguments(args);
@@ -276,6 +350,59 @@ async function runSearch(options: SearchOptions): Promise<void> {
   });
 }
 
+function formatMetric(value: number): string {
+  return value.toFixed(3);
+}
+
+function printEvaluationResult(mode: RetrievalMode, result: RagEvaluationResult): void {
+  console.log('');
+  console.log(`検索方式: ${mode}`);
+  console.log(`評価件数: ${result.itemCount}`);
+  console.log(`Recall@k: ${formatMetric(result.metrics.recallAtK)}`);
+  console.log(`MRR: ${formatMetric(result.metrics.mrr)}`);
+  console.log(`nDCG: ${formatMetric(result.metrics.ndcg)}`);
+
+  result.items.forEach((item) => {
+    console.log('');
+    console.log(`[${item.id}] ${item.question}`);
+    console.log(`expected: ${item.expectedIds.join(', ')}`);
+    console.log(`matched: ${item.matchedExpectedIds.join(', ') || '-'}`);
+    console.log(`firstRelevantRank: ${item.firstRelevantRank ?? '-'}`);
+    console.log(
+      `metrics: recall=${formatMetric(item.metrics.recallAtK)}, mrr=${formatMetric(
+        item.metrics.mrr,
+      )}, ndcg=${formatMetric(item.metrics.ndcg)}`,
+    );
+  });
+}
+
+async function runEvaluate(options: EvaluateOptions): Promise<void> {
+  const config = loadRagConfig();
+  const dataset = await loadRagEvaluationDataset(options.datasetPath);
+  const retrievalMode = options.retrievalMode ?? config.retrievalMode;
+  const topK = options.topK ?? config.topK;
+  const modes: RetrievalMode[] =
+    retrievalMode === 'all' ? ['vector', 'keyword', 'hybrid'] : [retrievalMode];
+
+  for (const mode of modes) {
+    const result = await evaluateRagDataset({
+      dataset,
+      retrieve: (item) =>
+        retrieveRagContext({
+          apiKey: config.apiKey,
+          embeddingModel: config.embeddingModel,
+          embeddingDimensions: config.embeddingDimensions,
+          lancedbDir: config.lancedbDir,
+          question: item.question,
+          retrievalMode: mode,
+          topK,
+        }),
+    });
+
+    printEvaluationResult(mode, result);
+  }
+}
+
 async function main(): Promise<void> {
   const options = parseArguments(process.argv.slice(2));
 
@@ -286,6 +413,11 @@ async function main(): Promise<void> {
 
   if (options.command === 'search') {
     await runSearch(options);
+    return;
+  }
+
+  if (options.command === 'evaluate') {
+    await runEvaluate(options);
     return;
   }
 

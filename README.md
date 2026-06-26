@@ -90,6 +90,15 @@ npm run rag:search -- --question "Open ChatのRAG構成は？"
 npm run rag:search -- --question "Open ChatのRAG構成は？" --retrieval-mode keyword --top-k 8
 ```
 
+RAG検索の評価は、質問と期待するチャンクIDまたは文書IDを持つJSONで実行します。`docs/rag-evaluation-sample.json` をコピーし、`rag:search` の結果に出るIDへ置き換えて使います。
+
+```bash
+npm run rag:evaluate -- --dataset "docs/rag-evaluation-sample.json"
+npm run rag:evaluate -- --dataset "docs/rag-evaluation-sample.json" --retrieval-mode all --top-k 8
+```
+
+評価では `Recall@k`、`MRR`、`nDCG` を出力します。`--retrieval-mode all` を指定すると、`vector`、`keyword`、`hybrid` を同じ評価データで比較できます。
+
 APIキーは環境変数からのみ読み取り、画面表示やファイル保存は行いません。
 
 回答は生成された部分から順に表示されます。生成中に `Ctrl+C` を押すとOpenAI APIへのリクエストを中断し、表示済みの内容を部分回答として残します。
