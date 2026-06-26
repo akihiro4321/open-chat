@@ -19,7 +19,12 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   try {
-    const preparedGeneration = await prepareChatGeneration(parsedRequest.data);
+    const preparedGeneration = await prepareChatGeneration({
+      threadId: parsedRequest.data.threadId,
+      requestId: parsedRequest.data.requestId,
+      message: parsedRequest.data.message,
+      mode: parsedRequest.data.mode,
+    });
 
     return new Response(createChatStream(preparedGeneration, request.signal), {
       headers: {

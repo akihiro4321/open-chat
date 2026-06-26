@@ -1,4 +1,12 @@
-import { type AppConfig, ConfigurationError, loadConfig, loadRagConfig } from '@/src/config.js';
+import { defaultTools, runAgentLoop } from '@/src/agent/index.js';
+import type { ChatMode } from '@/src/chat-protocol.js';
+import {
+  type AppConfig,
+  ConfigurationError,
+  loadAgentConfig,
+  loadConfig,
+  loadRagConfig,
+} from '@/src/config.js';
 import { ApplicationError, GenerationCancelledError } from '@/src/errors.js';
 import { selectRecentHistory } from '@/src/history.js';
 import type { ConversationMessage } from '@/src/openai-client.js';
@@ -31,6 +39,7 @@ export interface PrepareChatGenerationInput {
   threadId: string;
   requestId: string;
   message: string;
+  mode: ChatMode | undefined;
 }
 
 export interface PreparedChatGeneration {
@@ -38,6 +47,7 @@ export interface PreparedChatGeneration {
   fallbackModel: string | null;
   history: ConversationMessage[];
   originalQuestion: string;
+  mode: ChatMode;
   ragRequest: PreparedRagChatRequest;
   selectedConfig: AppConfig;
   threadId: string;
@@ -140,6 +150,7 @@ export async function prepareChatGeneration(
   input: PrepareChatGenerationInput,
 ): Promise<PreparedChatGeneration> {
   const config = loadConfig();
+  const mode: ChatMode = input.mode ?? 'static';
   const storedThread = await getThreadModel(input.threadId);
 
   if (!storedThread) {
@@ -152,7 +163,10 @@ export async function prepareChatGeneration(
     throw new ChatServiceError(400, 'このスレッドで選択されているモデルは現在利用できません。');
   }
 
-  const ragRequest = await prepareRagChatRequest(input.message);
+  const ragRequest =
+    mode === 'static'
+      ? await prepareRagChatRequest(input.message)
+      : { instruction: CHAT_INSTRUCTION, question: input.message, sources: [] };
   const generation = await beginGeneration(input.threadId, input.requestId, input.message);
 
   if (!generation) {
@@ -179,6 +193,7 @@ export async function prepareChatGeneration(
     assistantMessageId: generation.assistantMessage.id,
     fallbackModel: config.fallbackModel,
     history,
+    mode,
     originalQuestion: input.message,
     ragRequest,
     selectedConfig: { apiKey: config.apiKey, model: selectedModel },
@@ -188,6 +203,17 @@ export async function prepareChatGeneration(
 }
 
 export function createChatStream(
+  input: PreparedChatGeneration,
+  requestSignal: AbortSignal,
+): ReadableStream<Uint8Array> {
+  if (input.mode === 'agent') {
+    return createAgentChatStream(input, requestSignal);
+  }
+
+  return createStaticChatStream(input, requestSignal);
+}
+
+function createStaticChatStream(
   input: PreparedChatGeneration,
   requestSignal: AbortSignal,
 ): ReadableStream<Uint8Array> {
@@ -254,6 +280,100 @@ export function createChatStream(
             fallbackUsed: result.fallbackUsed,
             usage: result.usage,
             sources: input.ragRequest.sources,
+          });
+        })
+        .catch(async (error: unknown) => {
+          const cancelled = error instanceof GenerationCancelledError;
+          await markGenerationEnded(
+            input.assistantMessageId,
+            streamedAnswer,
+            cancelled ? 'cancelled' : 'failed',
+          ).catch(() => undefined);
+
+          if (!cancelled) {
+            send({ type: 'error', message: publicChatErrorMessage(error) });
+          }
+        })
+        .finally(() => {
+          if (!isClosed) {
+            isClosed = true;
+            controller.close();
+          }
+        });
+    },
+    cancel() {
+      isClosed = true;
+      streamAbortController.abort();
+    },
+  });
+}
+
+function createAgentChatStream(
+  input: PreparedChatGeneration,
+  requestSignal: AbortSignal,
+): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  const streamAbortController = new AbortController();
+  let isClosed = false;
+  let streamedAnswer = '';
+  const agentConfig = loadAgentConfig();
+
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      const send = (event: object): void => {
+        if (isClosed) {
+          return;
+        }
+
+        try {
+          controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+        } catch {
+          isClosed = true;
+          streamAbortController.abort();
+        }
+      };
+
+      void runAgentLoop({
+        apiKey: input.selectedConfig.apiKey,
+        model: input.selectedConfig.model,
+        instruction: input.ragRequest.instruction,
+        question: input.originalQuestion,
+        history: input.history,
+        tools: defaultTools,
+        maxIterations: agentConfig.maxIterations,
+        signal: AbortSignal.any([requestSignal, streamAbortController.signal]),
+        onTextDelta: (delta) => {
+          streamedAnswer += delta;
+          send({ type: 'delta', delta });
+        },
+      })
+        .then(async (result) => {
+          await finishGeneration(
+            input.assistantMessageId,
+            result.answer,
+            result.model,
+            null,
+            input.selectedConfig.model,
+            false,
+          );
+          const title =
+            input.threadTitle === DEFAULT_THREAD_TITLE
+              ? await generateThreadTitle(input.selectedConfig, input.originalQuestion)
+              : input.threadTitle;
+
+          if (title !== input.threadTitle) {
+            await updateThreadTitle(input.threadId, title);
+          }
+
+          send({
+            type: 'done',
+            assistantMessageId: input.assistantMessageId,
+            threadTitle: title,
+            model: result.model,
+            requestedModel: input.selectedConfig.model,
+            fallbackUsed: false,
+            usage: null,
+            sources: [],
           });
         })
         .catch(async (error: unknown) => {

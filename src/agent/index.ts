@@ -1,6 +1,13 @@
 export { runAgentLoop } from './loop.js';
 export { toOpenAITool, toOpenAITools } from './schema.js';
-export { defaultTools, getCurrentTimeSchema, getCurrentTimeTool } from './tools.js';
+export type { SearchRagInput, SearchRagToolDeps } from './tools.js';
+export {
+  createSearchRagTool,
+  defaultTools,
+  getCurrentTimeSchema,
+  getCurrentTimeTool,
+  searchRagSchema,
+} from './tools.js';
 export type {
   AgentLoopOptions,
   AgentLoopResult,

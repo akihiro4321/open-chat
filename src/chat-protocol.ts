@@ -1,9 +1,12 @@
 import { z } from 'zod';
 
+export const chatModeSchema = z.enum(['static', 'agent']);
+
 export const chatRequestSchema = z.object({
   threadId: z.string().min(1),
   requestId: z.uuid(),
   message: z.string().trim().min(1).max(10_000),
+  mode: chatModeSchema.optional(),
 });
 
 const tokenUsageSchema = z.object({
@@ -39,3 +42,4 @@ export const chatStreamEventSchema = z.discriminatedUnion('type', [
 ]);
 
 export type ChatStreamEvent = z.infer<typeof chatStreamEventSchema>;
+export type ChatMode = z.infer<typeof chatModeSchema>;
