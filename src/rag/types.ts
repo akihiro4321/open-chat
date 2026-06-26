@@ -82,3 +82,37 @@ export interface RagSourceReference {
 export interface RetrievedRagChunk extends RagSourceReference {
   text: string;
 }
+
+export interface RagEvaluationItem {
+  id: string;
+  question: string;
+  expectedChunkIds: string[];
+  expectedDocumentIds: string[];
+}
+
+export interface RagEvaluationDataset {
+  items: RagEvaluationItem[];
+}
+
+export interface RagEvaluationMetrics {
+  recallAtK: number;
+  mrr: number;
+  ndcg: number;
+}
+
+export interface RagEvaluationItemResult {
+  id: string;
+  question: string;
+  expectedIds: string[];
+  matchedExpectedIds: string[];
+  retrievedChunkIds: string[];
+  retrievedDocumentIds: string[];
+  firstRelevantRank: number | null;
+  metrics: RagEvaluationMetrics;
+}
+
+export interface RagEvaluationResult {
+  itemCount: number;
+  metrics: RagEvaluationMetrics;
+  items: RagEvaluationItemResult[];
+}
