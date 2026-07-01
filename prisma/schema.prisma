@@ -27,6 +27,7 @@ model Message {
   updatedAt DateTime  @updatedAt
   thread    Thread    @relation(fields: [threadId], references: [id], onDelete: Cascade)
   modelRun  ModelRun?
+  agentRun  AgentRun?
 
   @@index([threadId, createdAt])
 }
@@ -103,4 +104,45 @@ model ActiveRagIndex {
   ingestionRunId String          @unique
   activatedAt    DateTime        @default(now())
   ingestionRun   RagIngestionRun @relation(fields: [ingestionRunId], references: [id], onDelete: Cascade)
+}
+
+model AgentRun {
+  id                 String    @id @default(cuid())
+  messageId          String    @unique
+  status             String
+  model              String
+  maxIterations      Int
+  currentIteration   Int
+  currentInputJson   String
+  toolCallsJson      String
+  toolResultsJson    String
+  pendingCallIdsJson String
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  message            Message   @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  toolCalls          ToolCall[]
+}
+
+model ToolCall {
+  id         String    @id @default(cuid())
+  agentRunId String
+  callId     String
+  name       String
+  arguments  String
+  output     String?
+  isError    Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  agentRun   AgentRun  @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
+  approval   Approval?
+
+  @@index([agentRunId])
+}
+
+model Approval {
+  id         String   @id @default(cuid())
+  toolCallId String   @unique
+  status     String
+  createdAt  DateTime @default(now())
+  resolvedAt DateTime?
+  toolCall   ToolCall @relation(fields: [toolCallId], references: [id], onDelete: Cascade)
 }

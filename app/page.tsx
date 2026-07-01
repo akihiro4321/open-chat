@@ -17,9 +17,10 @@ interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  status: 'streaming' | 'completed' | 'cancelled' | 'failed';
+  status: 'streaming' | 'completed' | 'cancelled' | 'failed' | 'waiting_approval';
   modelRun?: RunDetails | null;
   ragSources?: RagSource[];
+  agentRunId?: string;
 }
 
 interface RunDetails {
@@ -130,7 +131,8 @@ export default function ChatPage() {
   };
 
   const handleLine = (line: string, assistantId: string): boolean => {
-    const event = chatStreamEventSchema.parse(JSON.parse(line));
+    const raw = JSON.parse(line) as Record<string, unknown>;
+    const event = chatStreamEventSchema.parse(raw);
 
     if (event.type === 'delta') {
       setMessages((current) =>
@@ -145,6 +147,24 @@ export default function ChatPage() {
 
     if (event.type === 'error') {
       throw new Error(event.message);
+    }
+
+    if (event.type === 'waiting_approval') {
+      updateAssistant(assistantId, {
+        status: 'waiting_approval',
+        agentRunId: event.agentRunId,
+      });
+      setRunDetails({ model: event.model, requestedModel: event.model });
+      setThreads((current) => {
+        const active = current.find((thread) => thread.id === activeThreadId);
+        return active
+          ? [
+              { ...active, title: event.threadTitle },
+              ...current.filter((thread) => thread.id !== activeThreadId),
+            ]
+          : current;
+      });
+      return true;
     }
 
     const modelRun = event.usage
@@ -291,6 +311,34 @@ export default function ChatPage() {
     setError(null);
   };
 
+  const handleApproval = async (message: Message, action: 'approve' | 'reject'): Promise<void> => {
+    if (!activeThreadId || !message.agentRunId) return;
+
+    updateAssistant(message.id, { status: 'streaming' });
+
+    try {
+      const response = await fetch(`/api/threads/${activeThreadId}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, agentRunId: message.agentRunId }),
+      });
+
+      if (!response.ok) {
+        throw new Error(await readApiError(response));
+      }
+
+      const result = (await response.json()) as { answer: string; model: string };
+      updateAssistant(message.id, {
+        content: result.answer,
+        status: 'completed',
+        modelRun: { model: result.model },
+      });
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : '承認処理に失敗しました。');
+      updateAssistant(message.id, { status: 'failed' });
+    }
+  };
+
   return (
     <main className="workspace">
       <aside className="sidebar">
@@ -373,6 +421,27 @@ export default function ChatPage() {
                 )}
                 {message.status === 'failed' && (
                   <p className="message-note">回答を完了できませんでした</p>
+                )}
+                {message.status === 'waiting_approval' && (
+                  <div className="approval-buttons">
+                    <p className="message-note">副作用ツールの承認が必要です</p>
+                    <button
+                      className="button-primary"
+                      disabled={isGenerating}
+                      onClick={() => void handleApproval(message, 'approve')}
+                      type="button"
+                    >
+                      承認
+                    </button>
+                    <button
+                      className="button-secondary"
+                      disabled={isGenerating}
+                      onClick={() => void handleApproval(message, 'reject')}
+                      type="button"
+                    >
+                      却下
+                    </button>
+                  </div>
                 )}
                 {message.ragSources && message.ragSources.length > 0 && (
                   <details className="rag-sources">

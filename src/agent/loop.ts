@@ -1,8 +1,9 @@
 import type { ResponseInputItem } from 'openai/resources/responses/responses';
 import { ZodError } from 'zod';
 
-import { ApplicationError, GenerationCancelledError } from '../errors.js';
+import { ApplicationError, GenerationCancelledError, WaitingApprovalError } from '../errors.js';
 import { requestAnswerStreamWithTools, type StreamToolCall } from '../openai-client.js';
+import { createAgentRun, createApproval, createToolCall } from './persistence.js';
 import { toOpenAITools } from './schema.js';
 import type {
   AgentLoopOptions,
@@ -182,6 +183,35 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
     if (streamResult.toolCalls.length === 0) {
       finishReason = 'completed';
       break;
+    }
+
+    const sideEffectCalls = streamResult.toolCalls.filter(
+      (call) => registry.get(call.name)?.hasSideEffect,
+    );
+
+    if (sideEffectCalls.length > 0) {
+      const agentRun = await createAgentRun({
+        messageId: options.messageId,
+        model: finalModel,
+        maxIterations: options.maxIterations,
+        currentIteration: iterations,
+        currentInput,
+        toolCalls: [...allToolCalls],
+        toolResults: [...allToolResults],
+        pendingCallIds: sideEffectCalls.map((c) => c.callId),
+      });
+
+      for (const call of sideEffectCalls) {
+        const toolCallId = await createToolCall({
+          agentRunId: agentRun.id,
+          callId: call.callId,
+          name: call.name,
+          arguments: call.arguments,
+        });
+        await createApproval({ toolCallId, status: 'pending' });
+      }
+
+      throw new WaitingApprovalError(agentRun.id);
     }
 
     const executed = await Promise.all(

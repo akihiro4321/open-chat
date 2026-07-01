@@ -6,6 +6,7 @@ export interface ToolDefinition<TSchema extends z.ZodType = z.ZodType> {
   name: string;
   description: string;
   schema: TSchema;
+  hasSideEffect: boolean;
   execute: (input: z.infer<TSchema>) => Promise<string>;
 }
 
@@ -27,6 +28,7 @@ export interface AgentLoopOptions {
   model: string;
   instruction: string;
   question: string;
+  messageId: string;
   history?: ReadonlyArray<ConversationMessage>;
   tools: ReadonlyArray<ToolDefinition>;
   maxIterations: number;
@@ -41,4 +43,19 @@ export interface AgentLoopResult {
   toolCalls: ReadonlyArray<AgentToolCall>;
   toolResults: ReadonlyArray<AgentToolResult>;
   finishReason: 'completed' | 'max_iterations' | 'cancelled' | 'failed';
+}
+
+export type AgentRunStatus = 'waiting_approval' | 'approved' | 'rejected' | 'completed';
+
+export interface AgentRunRecord {
+  id: string;
+  messageId: string;
+  status: AgentRunStatus;
+  model: string;
+  maxIterations: number;
+  currentIteration: number;
+  currentInputJson: string;
+  toolCallsJson: string;
+  toolResultsJson: string;
+  pendingCallIdsJson: string;
 }

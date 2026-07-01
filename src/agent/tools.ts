@@ -20,6 +20,7 @@ export const getCurrentTimeTool: ToolDefinition<typeof getCurrentTimeSchema> = {
   description:
     '現在の日時を指定タイムゾーンで返す。学習・テスト用途。副作用を持たないため並列実行可能。',
   schema: getCurrentTimeSchema,
+  hasSideEffect: false,
   execute: (input) => {
     const timezone = input.timezone ?? 'Asia/Tokyo';
     const now = new Date();
@@ -79,6 +80,7 @@ export function createSearchRagTool(
     description:
       'ローカルRAG索引から質問に関連する参考資料を検索する。回答に必要な根拠を探すために使う。副作用なし。',
     schema: searchRagSchema,
+    hasSideEffect: false,
     execute: async (input) => {
       const config = deps.loadConfig();
       const chunks = await deps.retrieveRag({
@@ -96,10 +98,38 @@ export function createSearchRagTool(
   };
 }
 
+const placeOrderSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).describe('商品名'),
+        quantity: z.number().int().min(1).describe('数量'),
+      }),
+    )
+    .min(1)
+    .describe('発注する商品と数量の一覧'),
+});
+
+export type PlaceOrderInput = z.infer<typeof placeOrderSchema>;
+
+export const placeOrderTool: ToolDefinition<typeof placeOrderSchema> = {
+  name: 'placeOrder',
+  description: '商品を発注する。この操作は副作用を持つため、実行前に人間の承認が必要。',
+  schema: placeOrderSchema,
+  hasSideEffect: true,
+  execute: (input) => {
+    const summary = input.items.map((item) => `${item.name}×${item.quantity}`).join(', ');
+    return Promise.resolve(
+      JSON.stringify({ status: 'ordered', items: input.items, receipt: `発注: ${summary}` }),
+    );
+  },
+};
+
 export const defaultTools: ReadonlyArray<ToolDefinition> = [
   getCurrentTimeTool,
   createSearchRagTool(),
+  placeOrderTool,
 ];
 
-export { getCurrentTimeSchema, searchRagSchema };
+export { getCurrentTimeSchema, placeOrderSchema, searchRagSchema };
 export type { GetCurrentTimeInput };

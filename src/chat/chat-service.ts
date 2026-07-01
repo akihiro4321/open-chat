@@ -1,4 +1,15 @@
+import type { ResponseInputItem } from 'openai/resources/responses/responses';
+
 import { defaultTools, runAgentLoop } from '@/src/agent/index.js';
+import {
+  deserializeAgentRunInput,
+  loadAgentRun,
+  rejectAgentRun,
+  resolveApproval,
+  updateAgentRunStatus,
+} from '@/src/agent/persistence.js';
+import { toOpenAITools } from '@/src/agent/schema.js';
+import type { AgentToolCall, AgentToolResult } from '@/src/agent/types.js';
 import type { ChatMode } from '@/src/chat-protocol.js';
 import {
   type AppConfig,
@@ -7,10 +18,14 @@ import {
   loadConfig,
   loadRagConfig,
 } from '@/src/config.js';
-import { ApplicationError, GenerationCancelledError } from '@/src/errors.js';
+import { ApplicationError, GenerationCancelledError, WaitingApprovalError } from '@/src/errors.js';
 import { selectRecentHistory } from '@/src/history.js';
 import type { ConversationMessage } from '@/src/openai-client.js';
-import { requestAnswer, requestAnswerStreamWithFallback } from '@/src/openai-client.js';
+import {
+  requestAnswer,
+  requestAnswerStreamWithFallback,
+  requestAnswerStreamWithTools,
+} from '@/src/openai-client.js';
 import {
   buildRagInstruction,
   buildRagQuestion,
@@ -206,7 +221,7 @@ export function createChatStream(
   input: PreparedChatGeneration,
   requestSignal: AbortSignal,
 ): ReadableStream<Uint8Array> {
-  if (input.mode === 'agent') {
+  if (input.mode === 'agent' || input.mode === 'propose') {
     return createAgentChatStream(input, requestSignal);
   }
 
@@ -338,6 +353,7 @@ function createAgentChatStream(
         model: input.selectedConfig.model,
         instruction: input.ragRequest.instruction,
         question: input.originalQuestion,
+        messageId: input.assistantMessageId,
         history: input.history,
         tools: defaultTools,
         maxIterations: agentConfig.maxIterations,
@@ -377,15 +393,29 @@ function createAgentChatStream(
           });
         })
         .catch(async (error: unknown) => {
-          const cancelled = error instanceof GenerationCancelledError;
-          await markGenerationEnded(
-            input.assistantMessageId,
-            streamedAnswer,
-            cancelled ? 'cancelled' : 'failed',
-          ).catch(() => undefined);
+          if (error instanceof WaitingApprovalError) {
+            await markGenerationEnded(input.assistantMessageId, streamedAnswer, 'failed').catch(
+              () => undefined,
+            );
 
-          if (!cancelled) {
-            send({ type: 'error', message: publicChatErrorMessage(error) });
+            send({
+              type: 'waiting_approval',
+              assistantMessageId: input.assistantMessageId,
+              threadTitle: input.threadTitle,
+              model: input.selectedConfig.model,
+              agentRunId: error.agentRunId,
+            });
+          } else {
+            const cancelled = error instanceof GenerationCancelledError;
+            await markGenerationEnded(
+              input.assistantMessageId,
+              streamedAnswer,
+              cancelled ? 'cancelled' : 'failed',
+            ).catch(() => undefined);
+
+            if (!cancelled) {
+              send({ type: 'error', message: publicChatErrorMessage(error) });
+            }
           }
         })
         .finally(() => {
@@ -400,4 +430,97 @@ function createAgentChatStream(
       streamAbortController.abort();
     },
   });
+}
+
+export async function resumeAgentLoop(input: {
+  agentRunId: string;
+  action: 'approve' | 'reject';
+  config: AppConfig;
+}): Promise<{ answer: string; model: string }> {
+  const agentRun = await loadAgentRun(input.agentRunId);
+
+  if (!agentRun) {
+    throw new ChatServiceError(404, '承認待ちのエージェント実行が見つかりません。');
+  }
+
+  if (agentRun.status !== 'waiting_approval') {
+    throw new ChatServiceError(409, 'このエージェント実行はすでに処理されています。');
+  }
+
+  if (input.action === 'reject') {
+    await rejectAgentRun(input.agentRunId);
+    return { answer: 'ツールの実行が却下されました。', model: agentRun.model };
+  }
+
+  const pendingCallIds: string[] = JSON.parse(agentRun.pendingCallIdsJson) as string[];
+  const toolCalls: AgentToolCall[] = JSON.parse(agentRun.toolCallsJson) as AgentToolCall[];
+  const toolResults: AgentToolResult[] = JSON.parse(agentRun.toolResultsJson) as AgentToolResult[];
+  const pendingToolCalls = toolCalls.filter((tc) => pendingCallIds.includes(tc.callId));
+  const openAITools = toOpenAITools(defaultTools);
+
+  for (const toolCall of pendingToolCalls) {
+    await resolveApproval(toolCall.callId, 'approved');
+
+    const tool = defaultTools.find((t) => t.name === toolCall.name);
+
+    if (tool) {
+      try {
+        const parsed = JSON.parse(toolCall.arguments) as Record<string, unknown>;
+        const output = await tool.execute(parsed);
+        toolResults.push({
+          callId: toolCall.callId,
+          name: toolCall.name,
+          output,
+          isError: false,
+        });
+      } catch (error: unknown) {
+        toolResults.push({
+          callId: toolCall.callId,
+          name: toolCall.name,
+          output: error instanceof Error ? error.message : String(error),
+          isError: true,
+        });
+      }
+    }
+  }
+
+  const currentInput = deserializeAgentRunInput(agentRun.currentInputJson);
+  const nextItems: ResponseInputItem[] = Array.isArray(currentInput) ? [...currentInput] : [];
+
+  for (const tc of toolCalls) {
+    if (!pendingCallIds.includes(tc.callId)) continue;
+    nextItems.push({
+      type: 'function_call',
+      id: tc.callId,
+      call_id: tc.callId,
+      name: tc.name,
+      arguments: tc.arguments,
+    });
+  }
+
+  for (const tr of toolResults) {
+    if (!pendingCallIds.includes(tr.callId)) continue;
+    nextItems.push({
+      type: 'function_call_output',
+      call_id: tr.callId,
+      output: tr.output,
+    });
+  }
+
+  const streamResult = await requestAnswerStreamWithTools(
+    input.config,
+    {
+      instruction: CHAT_INSTRUCTION,
+      input: nextItems,
+      tools: openAITools,
+      parallelToolCalls: true,
+    },
+    {
+      onTextDelta: () => undefined,
+    },
+  );
+
+  await updateAgentRunStatus(input.agentRunId, 'completed');
+
+  return { answer: streamResult.answer, model: streamResult.model };
 }

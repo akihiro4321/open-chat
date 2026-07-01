@@ -37,6 +37,16 @@ export class GenerationCancelledError extends Error {
   }
 }
 
+export class WaitingApprovalError extends Error {
+  readonly agentRunId: string;
+
+  constructor(agentRunId: string) {
+    super('副作用ツールの承認待ちです。');
+    this.name = 'WaitingApprovalError';
+    this.agentRunId = agentRunId;
+  }
+}
+
 export function classifyOpenAIError(error: unknown): ApplicationError {
   if (error instanceof ApplicationError) {
     return error;

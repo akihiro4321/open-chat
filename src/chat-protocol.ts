@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const chatModeSchema = z.enum(['static', 'agent']);
+export const chatModeSchema = z.enum(['static', 'agent', 'propose']);
 
 export const chatRequestSchema = z.object({
   threadId: z.string().min(1),
@@ -26,7 +26,7 @@ const ragSourceSchema = z.object({
   score: z.number().nullable(),
 });
 
-export const chatStreamEventSchema = z.discriminatedUnion('type', [
+export const chatStreamEventSchema = z.union([
   z.object({ type: z.literal('delta'), delta: z.string() }),
   z.object({
     type: z.literal('done'),
@@ -37,6 +37,14 @@ export const chatStreamEventSchema = z.discriminatedUnion('type', [
     fallbackUsed: z.boolean(),
     usage: tokenUsageSchema.nullable(),
     sources: z.array(ragSourceSchema),
+    status: z.literal('completed').optional(),
+  }),
+  z.object({
+    type: z.literal('waiting_approval'),
+    assistantMessageId: z.string(),
+    threadTitle: z.string(),
+    model: z.string(),
+    agentRunId: z.string(),
   }),
   z.object({ type: z.literal('error'), message: z.string() }),
 ]);
