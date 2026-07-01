@@ -155,6 +155,35 @@ export async function resolveApproval(
   });
 }
 
+export async function resolveApprovalByCallId(
+  agentRunId: string,
+  callId: string,
+  status: 'approved' | 'rejected',
+): Promise<void> {
+  const toolCall = await prisma.toolCall.findFirst({
+    where: { agentRunId, callId },
+    select: { id: true },
+  });
+
+  if (!toolCall) {
+    return;
+  }
+
+  await resolveApproval(toolCall.id, status);
+}
+
+export async function updateToolCallResult(input: {
+  agentRunId: string;
+  callId: string;
+  output: string;
+  isError: boolean;
+}): Promise<void> {
+  await prisma.toolCall.updateMany({
+    where: { agentRunId: input.agentRunId, callId: input.callId },
+    data: { output: input.output, isError: input.isError },
+  });
+}
+
 export async function cancelPendingApprovals(agentRunId: string): Promise<void> {
   await prisma.approval.updateMany({
     where: {

@@ -5,8 +5,9 @@ import {
   deserializeAgentRunInput,
   loadAgentRun,
   rejectAgentRun,
-  resolveApproval,
+  resolveApprovalByCallId,
   updateAgentRunStatus,
+  updateToolCallResult,
 } from '@/src/agent/persistence.js';
 import { toOpenAITools } from '@/src/agent/schema.js';
 import type { AgentToolCall, AgentToolResult } from '@/src/agent/types.js';
@@ -459,29 +460,45 @@ export async function resumeAgentLoop(input: {
   const openAITools = toOpenAITools(defaultTools);
 
   for (const toolCall of pendingToolCalls) {
-    await resolveApproval(toolCall.callId, 'approved');
+    await resolveApprovalByCallId(input.agentRunId, toolCall.callId, 'approved');
 
     const tool = defaultTools.find((t) => t.name === toolCall.name);
+    let result: AgentToolResult;
 
     if (tool) {
       try {
         const parsed = JSON.parse(toolCall.arguments) as Record<string, unknown>;
         const output = await tool.execute(parsed);
-        toolResults.push({
+        result = {
           callId: toolCall.callId,
           name: toolCall.name,
           output,
           isError: false,
-        });
+        };
       } catch (error: unknown) {
-        toolResults.push({
+        result = {
           callId: toolCall.callId,
           name: toolCall.name,
           output: error instanceof Error ? error.message : String(error),
           isError: true,
-        });
+        };
       }
+    } else {
+      result = {
+        callId: toolCall.callId,
+        name: toolCall.name,
+        output: `未知のツールです: ${toolCall.name}`,
+        isError: true,
+      };
     }
+
+    toolResults.push(result);
+    await updateToolCallResult({
+      agentRunId: input.agentRunId,
+      callId: toolCall.callId,
+      output: result.output,
+      isError: result.isError,
+    });
   }
 
   const currentInput = deserializeAgentRunInput(agentRun.currentInputJson);

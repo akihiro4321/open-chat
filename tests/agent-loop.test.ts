@@ -3,10 +3,26 @@ import test from 'node:test';
 
 import { runAgentLoop } from '../src/agent/loop.js';
 import { defaultTools } from '../src/agent/tools.js';
-import { GenerationCancelledError } from '../src/errors.js';
+import { resumeAgentLoop } from '../src/chat/chat-service.js';
+import { prisma } from '../src/database.js';
+import { GenerationCancelledError, WaitingApprovalError } from '../src/errors.js';
 
 const TEST_API_KEY = 'test-api-key';
 const TEST_MODEL = 'test-model';
+
+async function createTestMessage(): Promise<{ threadId: string; messageId: string }> {
+  const thread = await prisma.thread.create({ data: { title: 'HITL test' } });
+  const message = await prisma.message.create({
+    data: {
+      threadId: thread.id,
+      role: 'assistant',
+      content: '',
+      status: 'streaming',
+    },
+  });
+
+  return { threadId: thread.id, messageId: message.id };
+}
 
 function streamResponse(events: unknown[]): Response {
   const body = events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join('');
@@ -381,4 +397,186 @@ void test('runAgentLoop: キャンセルはGenerationCancelledErrorで伝播す�
     }),
     GenerationCancelledError,
   );
+});
+
+void test('runAgentLoop: 副作用ツールは実行せず承認待ちとして永続化する', async (context) => {
+  const originalFetch = globalThis.fetch;
+  const { threadId, messageId } = await createTestMessage();
+  const { fetch } = makeMockFetch([
+    {
+      text: '',
+      toolCalls: [
+        {
+          callId: 'fc_order_waiting',
+          name: 'placeOrder',
+          arguments: '{"items":[{"name":"ノート","quantity":2}]}',
+        },
+      ],
+    },
+  ]);
+  context.after(async () => {
+    globalThis.fetch = originalFetch;
+    await prisma.thread.delete({ where: { id: threadId } }).catch(() => undefined);
+  });
+  globalThis.fetch = fetch;
+
+  let agentRunId = '';
+  await assert.rejects(
+    async () =>
+      runAgentLoop({
+        apiKey: TEST_API_KEY,
+        model: TEST_MODEL,
+        instruction: 'テスト用指示',
+        question: 'ノートを2冊発注して',
+        messageId,
+        tools: defaultTools,
+        maxIterations: 3,
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof WaitingApprovalError);
+      agentRunId = error.agentRunId;
+      return true;
+    },
+  );
+
+  const agentRun = await prisma.agentRun.findUnique({
+    where: { id: agentRunId },
+    include: { toolCalls: { include: { approval: true } } },
+  });
+
+  assert.equal(agentRun?.status, 'waiting_approval');
+  assert.deepEqual(JSON.parse(agentRun?.pendingCallIdsJson ?? '[]'), ['fc_order_waiting']);
+  assert.match(agentRun?.toolCallsJson ?? '', /fc_order_waiting/);
+  assert.equal(agentRun?.toolCalls.length, 1);
+  assert.equal(agentRun?.toolCalls[0]?.name, 'placeOrder');
+  assert.equal(agentRun?.toolCalls[0]?.output, null);
+  assert.equal(agentRun?.toolCalls[0]?.approval?.status, 'pending');
+});
+
+void test('resumeAgentLoop: 承認すると副作用ツールを実行して最終回答へ進む', async (context) => {
+  const originalFetch = globalThis.fetch;
+  const { threadId, messageId } = await createTestMessage();
+  const { fetch, captured } = makeMockFetch([
+    {
+      text: '',
+      toolCalls: [
+        {
+          callId: 'fc_order_approved',
+          name: 'placeOrder',
+          arguments: '{"items":[{"name":"ペン","quantity":3}]}',
+        },
+      ],
+    },
+    { text: '発注しました。' },
+  ]);
+  context.after(async () => {
+    globalThis.fetch = originalFetch;
+    await prisma.thread.delete({ where: { id: threadId } }).catch(() => undefined);
+  });
+  globalThis.fetch = fetch;
+
+  let agentRunId = '';
+  await assert.rejects(
+    async () =>
+      runAgentLoop({
+        apiKey: TEST_API_KEY,
+        model: TEST_MODEL,
+        instruction: 'テスト用指示',
+        question: 'ペンを3本発注して',
+        messageId,
+        tools: defaultTools,
+        maxIterations: 3,
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof WaitingApprovalError);
+      agentRunId = error.agentRunId;
+      return true;
+    },
+  );
+
+  const result = await resumeAgentLoop({
+    agentRunId,
+    action: 'approve',
+    config: { apiKey: TEST_API_KEY, model: TEST_MODEL },
+  });
+
+  assert.deepEqual(result, { answer: '発注しました。', model: TEST_MODEL });
+
+  const agentRun = await prisma.agentRun.findUnique({
+    where: { id: agentRunId },
+    include: { toolCalls: { include: { approval: true } } },
+  });
+  assert.equal(agentRun?.status, 'completed');
+  assert.equal(agentRun?.toolCalls[0]?.approval?.status, 'approved');
+  assert.match(agentRun?.toolCalls[0]?.output ?? '', /ordered/);
+
+  const secondRequest = captured[1] as { input?: unknown };
+  assert.ok(Array.isArray(secondRequest.input));
+  const items = secondRequest.input as Array<Record<string, unknown>>;
+  assert.ok(items.some((item) => item.type === 'function_call'));
+  assert.ok(
+    items.some(
+      (item) =>
+        item.type === 'function_call_output' &&
+        typeof item.output === 'string' &&
+        item.output.includes('ペン'),
+    ),
+  );
+});
+
+void test('resumeAgentLoop: 却下すると副作用ツールを実行せず終了する', async (context) => {
+  const originalFetch = globalThis.fetch;
+  const { threadId, messageId } = await createTestMessage();
+  const { fetch } = makeMockFetch([
+    {
+      text: '',
+      toolCalls: [
+        {
+          callId: 'fc_order_rejected',
+          name: 'placeOrder',
+          arguments: '{"items":[{"name":"消しゴム","quantity":1}]}',
+        },
+      ],
+    },
+  ]);
+  context.after(async () => {
+    globalThis.fetch = originalFetch;
+    await prisma.thread.delete({ where: { id: threadId } }).catch(() => undefined);
+  });
+  globalThis.fetch = fetch;
+
+  let agentRunId = '';
+  await assert.rejects(
+    async () =>
+      runAgentLoop({
+        apiKey: TEST_API_KEY,
+        model: TEST_MODEL,
+        instruction: 'テスト用指示',
+        question: '消しゴムを1個発注して',
+        messageId,
+        tools: defaultTools,
+        maxIterations: 3,
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof WaitingApprovalError);
+      agentRunId = error.agentRunId;
+      return true;
+    },
+  );
+
+  const result = await resumeAgentLoop({
+    agentRunId,
+    action: 'reject',
+    config: { apiKey: TEST_API_KEY, model: TEST_MODEL },
+  });
+
+  assert.deepEqual(result, { answer: 'ツールの実行が却下されました。', model: TEST_MODEL });
+
+  const agentRun = await prisma.agentRun.findUnique({
+    where: { id: agentRunId },
+    include: { toolCalls: { include: { approval: true } } },
+  });
+  assert.equal(agentRun?.status, 'rejected');
+  assert.equal(agentRun?.toolCalls[0]?.approval?.status, 'rejected');
+  assert.equal(agentRun?.toolCalls[0]?.output, null);
 });

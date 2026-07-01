@@ -190,13 +190,18 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
     );
 
     if (sideEffectCalls.length > 0) {
+      const currentToolCalls = streamResult.toolCalls.map((call) => ({
+        callId: call.callId,
+        name: call.name,
+        arguments: call.arguments,
+      }));
       const agentRun = await createAgentRun({
         messageId: options.messageId,
         model: finalModel,
         maxIterations: options.maxIterations,
         currentIteration: iterations,
         currentInput,
-        toolCalls: [...allToolCalls],
+        toolCalls: [...allToolCalls, ...currentToolCalls],
         toolResults: [...allToolResults],
         pendingCallIds: sideEffectCalls.map((c) => c.callId),
       });
