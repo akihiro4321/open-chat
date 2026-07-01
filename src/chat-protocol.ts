@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const chatModeSchema = z.enum(['static', 'agent', 'propose']);
+export const chatModeSchema = z.enum(['static', 'agent', 'propose', 'multi_agent']);
 
 export const chatRequestSchema = z.object({
   threadId: z.string().min(1),

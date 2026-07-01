@@ -3,7 +3,7 @@
 import type { FormEvent } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { chatStreamEventSchema } from '@/src/chat-protocol.js';
+import { type ChatMode, chatStreamEventSchema } from '@/src/chat-protocol.js';
 
 interface ThreadSummary {
   id: string;
@@ -59,6 +59,7 @@ export default function ChatPage() {
   const [runDetails, setRunDetails] = useState<RunDetails | null>(null);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState('');
+  const [chatMode, setChatMode] = useState<ChatMode>('static');
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const loadThread = useCallback(async (threadId: string): Promise<void> => {
@@ -257,7 +258,12 @@ export default function ChatPage() {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ threadId: activeThreadId, requestId, message: question }),
+        body: JSON.stringify({
+          threadId: activeThreadId,
+          requestId,
+          message: question,
+          mode: chatMode,
+        }),
         signal: abortController.signal,
       });
       await consumeStream(response, assistantMessage.id);
@@ -400,6 +406,20 @@ export default function ChatPage() {
                   {model}
                 </option>
               ))}
+            </select>
+          </div>
+          <div className="model-control">
+            <label htmlFor="chat-mode">モード</label>
+            <select
+              disabled={isGenerating || !activeThreadId}
+              id="chat-mode"
+              onChange={(event) => setChatMode(event.target.value as ChatMode)}
+              value={chatMode}
+            >
+              <option value="static">静的RAG</option>
+              <option value="agent">Agentic RAG</option>
+              <option value="propose">提案</option>
+              <option value="multi_agent">マルチエージェント</option>
             </select>
           </div>
         </header>

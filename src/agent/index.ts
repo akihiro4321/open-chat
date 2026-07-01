@@ -1,4 +1,6 @@
 export { runAgentLoop } from './loop.js';
+export type { MultiAgentModelConfig, MultiAgentResult } from './multi-agent.js';
+export { runMultiAgent } from './multi-agent.js';
 export { toOpenAITool, toOpenAITools } from './schema.js';
 export type { SearchRagInput, SearchRagToolDeps } from './tools.js';
 export {

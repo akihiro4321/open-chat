@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { ConfigurationError, loadConfig, loadRagConfig } from '../src/config.js';
+import { ConfigurationError, loadAgentConfig, loadConfig, loadRagConfig } from '../src/config.js';
 
 void test('APIキーとモデル名の前後空白を除いて読み込む', () => {
   assert.deepEqual(
@@ -31,6 +31,23 @@ void test('許可モデルとフォールバックモデルを読み込む', () 
       model: 'primary-model',
       allowedModels: ['primary-model', 'fallback-model'],
       fallbackModel: 'fallback-model',
+    },
+  );
+});
+
+void test('エージェントの役割別モデルを読み込む', () => {
+  assert.deepEqual(
+    loadAgentConfig({
+      AGENT_MAX_ITERATIONS: '7',
+      AGENT_RESEARCH_MODEL: 'research-model',
+      AGENT_PLANNER_MODEL: 'planner-model',
+      AGENT_SUPERVISOR_MODEL: 'supervisor-model',
+    }),
+    {
+      maxIterations: 7,
+      researchModel: 'research-model',
+      plannerModel: 'planner-model',
+      supervisorModel: 'supervisor-model',
     },
   );
 });

@@ -106,10 +106,16 @@ function readRetrievalMode(environment: Record<string, string | undefined>): Ret
 
 export function loadAgentConfig(environment: Record<string, string | undefined> = process.env): {
   maxIterations: number;
+  researchModel: string | null;
+  plannerModel: string | null;
+  supervisorModel: string | null;
 } {
   const maxIterations = readPositiveInteger(environment, 'AGENT_MAX_ITERATIONS') ?? 5;
+  const researchModel = environment.AGENT_RESEARCH_MODEL?.trim() || null;
+  const plannerModel = environment.AGENT_PLANNER_MODEL?.trim() || null;
+  const supervisorModel = environment.AGENT_SUPERVISOR_MODEL?.trim() || null;
 
-  return { maxIterations };
+  return { maxIterations, researchModel, plannerModel, supervisorModel };
 }
 
 export function loadRagConfig(

@@ -5,10 +5,11 @@ import { chatModeSchema, chatRequestSchema } from '../src/chat-protocol.js';
 
 const TEST_REQUEST_ID = '00000000-0000-4000-8000-000000000000';
 
-void test('chatModeSchema: static、agent、propose を受け入れる', () => {
+void test('chatModeSchema: static、agent、propose、multi_agent を受け入れる', () => {
   assert.deepEqual(chatModeSchema.parse('static'), 'static');
   assert.deepEqual(chatModeSchema.parse('agent'), 'agent');
   assert.deepEqual(chatModeSchema.parse('propose'), 'propose');
+  assert.deepEqual(chatModeSchema.parse('multi_agent'), 'multi_agent');
 });
 
 void test('chatModeSchema: 不正な値を拒否する', () => {
@@ -47,6 +48,17 @@ void test('chatRequestSchema: mode=proposeをバリデーションする', () =>
   });
 
   assert.equal(result.mode, 'propose');
+});
+
+void test('chatRequestSchema: mode=multi_agentをバリデーションする', () => {
+  const result = chatRequestSchema.parse({
+    threadId: 'thread-1',
+    requestId: TEST_REQUEST_ID,
+    message: '質問',
+    mode: 'multi_agent',
+  });
+
+  assert.equal(result.mode, 'multi_agent');
 });
 
 void test('chatRequestSchema: 不正なmodeを拒否する', () => {

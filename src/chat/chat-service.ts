@@ -1,6 +1,6 @@
 import type { ResponseInputItem } from 'openai/resources/responses/responses';
 
-import { defaultTools, runAgentLoop } from '@/src/agent/index.js';
+import { defaultTools, runAgentLoop, runMultiAgent } from '@/src/agent/index.js';
 import {
   deserializeAgentRunInput,
   loadAgentRun,
@@ -222,6 +222,10 @@ export function createChatStream(
   input: PreparedChatGeneration,
   requestSignal: AbortSignal,
 ): ReadableStream<Uint8Array> {
+  if (input.mode === 'multi_agent') {
+    return createMultiAgentChatStream(input);
+  }
+
   if (input.mode === 'agent' || input.mode === 'propose') {
     return createAgentChatStream(input, requestSignal);
   }
@@ -324,6 +328,96 @@ function createStaticChatStream(
   });
 }
 
+function createMultiAgentChatStream(input: PreparedChatGeneration): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  const streamAbortController = new AbortController();
+  let isClosed = false;
+  const agentConfig = loadAgentConfig();
+
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      const send = (event: object): void => {
+        if (isClosed) {
+          return;
+        }
+
+        try {
+          controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+        } catch {
+          isClosed = true;
+          streamAbortController.abort();
+        }
+      };
+
+      void runMultiAgent({
+        apiKey: input.selectedConfig.apiKey,
+        baseModel: input.selectedConfig.model,
+        question: input.originalQuestion,
+        messageId: input.assistantMessageId,
+        history: input.history,
+        maxIterations: agentConfig.maxIterations,
+        models: {
+          researchModel: agentConfig.researchModel,
+          plannerModel: agentConfig.plannerModel,
+          supervisorModel: agentConfig.supervisorModel,
+        },
+      })
+        .then(async (result) => {
+          await finishGeneration(
+            input.assistantMessageId,
+            result.answer,
+            result.model,
+            null,
+            result.requestedModel,
+            result.requestedModel !== input.selectedConfig.model,
+          );
+          const title =
+            input.threadTitle === DEFAULT_THREAD_TITLE
+              ? await generateThreadTitle(input.selectedConfig, input.originalQuestion)
+              : input.threadTitle;
+
+          if (title !== input.threadTitle) {
+            await updateThreadTitle(input.threadId, title);
+          }
+
+          send({ type: 'delta', delta: result.answer });
+          send({
+            type: 'done',
+            assistantMessageId: input.assistantMessageId,
+            threadTitle: title,
+            model: result.model,
+            requestedModel: result.requestedModel,
+            fallbackUsed: result.requestedModel !== input.selectedConfig.model,
+            usage: null,
+            sources: [],
+          });
+        })
+        .catch(async (error: unknown) => {
+          const cancelled = error instanceof GenerationCancelledError;
+          await markGenerationEnded(
+            input.assistantMessageId,
+            '',
+            cancelled ? 'cancelled' : 'failed',
+          ).catch(() => undefined);
+
+          if (!cancelled) {
+            send({ type: 'error', message: publicChatErrorMessage(error) });
+          }
+        })
+        .finally(() => {
+          if (!isClosed) {
+            isClosed = true;
+            controller.close();
+          }
+        });
+    },
+    cancel() {
+      isClosed = true;
+      streamAbortController.abort();
+    },
+  });
+}
+
 function createAgentChatStream(
   input: PreparedChatGeneration,
   requestSignal: AbortSignal,
@@ -352,11 +446,17 @@ function createAgentChatStream(
       void runAgentLoop({
         apiKey: input.selectedConfig.apiKey,
         model: input.selectedConfig.model,
-        instruction: input.ragRequest.instruction,
+        instruction:
+          input.mode === 'propose'
+            ? `${input.ragRequest.instruction}\n副作用のある操作は実行せず、実行計画と承認が必要な内容だけを提案してください。`
+            : input.ragRequest.instruction,
         question: input.originalQuestion,
         messageId: input.assistantMessageId,
         history: input.history,
-        tools: defaultTools,
+        tools:
+          input.mode === 'propose'
+            ? defaultTools.filter((tool) => !tool.hasSideEffect)
+            : defaultTools,
         maxIterations: agentConfig.maxIterations,
         signal: AbortSignal.any([requestSignal, streamAbortController.signal]),
         onTextDelta: (delta) => {
